@@ -1,7 +1,6 @@
 // ========== 配置 ==========
 
 static struct Config {
-    bool  enabled;
     char  bg_file[64];       // 背景 PCX 文件名（插件目录\pcx 下）；建议 ≤11 字符（含 .pcx），兼容 HoMM3 12字节资源名缓冲。
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
@@ -146,7 +145,6 @@ static void DoLogCleanupOnce()
 static void ReadConfig()
 {
     const char* f = g_ini_path;
-    cfg.enabled            = GetPrivateProfileIntA("General",      "Enabled",              1, f) != 0;
     GetPrivateProfileStringA("Images", "BackgroundPcx", "bv_bgA.pcx", cfg.bg_file, sizeof(cfg.bg_file), f);
     if (!cfg.bg_file[0]) lstrcpynA(cfg.bg_file, "bv_bgA.pcx", sizeof(cfg.bg_file));
     // 布局参数

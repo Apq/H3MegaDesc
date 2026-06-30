@@ -14,7 +14,6 @@ MegaDesc 是一个《英雄无敌3》HD Mod 插件，扩展生物信息窗口：
 
 ### 配置控制
 
-- INI 文件 `[General] Enabled` 为总开关
 - `[Layout]` 控制窗口尺寸和文本布局
 - `[Images]` 自定义背景图
 

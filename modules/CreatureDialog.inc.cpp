@@ -562,12 +562,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         UpdatePcx8ButtonFromDef(ok_frame, ok_def, s_ok_btn, cfg.btn_margin_bottom, dlg, (void**)s_ok_def_novtbl, &s_ok_binding);
     }
 
-    if (need_shift) {
-        int creature_id = *(int*)((char*)dlg + 0x60);
-        WriteLog("生物信息窗口已调整 creature_id=%d pos=(%d,%d)",
-            creature_id, (int)dlg->x, (int)dlg->y);
-    }
-
     // 注意：不在 BUILD 阶段直接修改 dlg->x/y。窗口位置由 Hook_DlgInitClampY 统一处理。
 }
 

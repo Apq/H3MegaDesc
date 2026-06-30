@@ -49,10 +49,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID reserved)
             return TRUE;
         }
         ReadConfig();
-        if (!cfg.enabled) {
-            WriteLog("插件已被 INI 禁用。");
-            return TRUE;
-        }
         StartPlugin();
     }
     return TRUE;
