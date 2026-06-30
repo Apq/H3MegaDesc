@@ -1,6 +1,6 @@
 <Solution>
   <Configurations>
-    <Platform Name="x64" />
+    <BuildType Name="Release" />
     <Platform Name="x86" />
   </Configurations>
   <Project Path="MegaDesc.vcxproj" Id="378e086a-f308-43cd-9d88-660f0a452b81" />
