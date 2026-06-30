@@ -3,8 +3,7 @@ static void ApplyCreatureBoxPatches()
     int wh = cfg.window_height;
     char wh_hex[16]; sprintf(wh_hex, "68 %02X %02X 00 00", wh & 0xFF, (wh >> 8) & 0xFF);
 
-    // 背景图名不改——运行时在 AdjustCreatureInfoDlg 中自己加载 PCX24 并替换控件
-    // _PI->WriteHexPatch(0x68C6E8, ...
+    // 背景图名不改；运行时在 AdjustCreatureInfoDlg 中按配置加载 PCX 并替换控件。
 
     // 窗口高度，冒险/战斗/城镇三界面各两处
     _PI->WriteHexPatch(0x5F3F1B, wh_hex);  // 战斗
@@ -56,7 +55,7 @@ static void ApplyCreatureBoxPatches()
 
 // ========== 图片加载器（24-bit / 3-plane PCX） ==========
 // 直接读取插件目录 pcx\*.pcx，不走游戏资源系统；支持 bpp=8, planes=3 的 24-bit PCX。
-// 输出 RGB888 → 量化到游戏调色板 → _Pcx8_（用于背景和按钮替换）。
+// 输出 RGB888 → 量化到游戏调色板 → _Pcx8_。
 
 static bool DecodePcx24ToRgb(const char* pcxPath, unsigned char** outRgb, int* outW, int* outH)
 {
@@ -150,12 +149,15 @@ static _Pcx8_* LoadPcx24QuantizedAsPcx8(const char* name, _Pcx8_* palSrc)
     char* slash = strrchr(path, '\\');
     if (slash) slash[1] = 0; else path[0] = 0;
 
-    char pcxPath[MAX_PATH];
-    _snprintf(pcxPath, MAX_PATH, "%spcx\\%s", path, name);
+    const size_t path_buf_size = 2 * 1024 * 1024;
+    char* pcxPath = (char*)malloc(path_buf_size);
+    if (!pcxPath) return nullptr;
+    _snprintf(pcxPath, path_buf_size, "%spcx\\%s", path, name);
 
     unsigned char* rgb = nullptr;
     int w = 0, h = 0;
-    if (!DecodePcx24ToRgb(pcxPath, &rgb, &w, &h)) return nullptr;
+    if (!DecodePcx24ToRgb(pcxPath, &rgb, &w, &h)) { free(pcxPath); return nullptr; }
+    free(pcxPath);
 
     _Pcx8_* pcx8 = QuantizeRgbAsPcx8(rgb, w, h, palSrc, "bv_q8");
     free(rgb);
@@ -169,14 +171,23 @@ static _Pcx8_* LoadPcx24CompositeAsPcx8(const char* frameName, const char* iconN
     char* slash = strrchr(path, '\\');
     if (slash) slash[1] = 0; else path[0] = 0;
 
-    char framePath[MAX_PATH], iconPath[MAX_PATH];
-    _snprintf(framePath, MAX_PATH, "%spcx\\%s", path, frameName);
-    _snprintf(iconPath, MAX_PATH, "%spcx\\%s", path, iconName);
+    const size_t path_buf_size = 2 * 1024 * 1024;
+    char* framePath = (char*)malloc(path_buf_size);
+    char* iconPath = (char*)malloc(path_buf_size);
+    if (!framePath || !iconPath) {
+        if (framePath) free(framePath);
+        if (iconPath) free(iconPath);
+        return nullptr;
+    }
+    _snprintf(framePath, path_buf_size, "%spcx\\%s", path, frameName);
+    _snprintf(iconPath, path_buf_size, "%spcx\\%s", path, iconName);
 
     unsigned char *frame = nullptr, *icon = nullptr;
     int fw = 0, fh = 0, iw = 0, ih = 0;
-    if (!DecodePcx24ToRgb(framePath, &frame, &fw, &fh)) return nullptr;
-    if (!DecodePcx24ToRgb(iconPath, &icon, &iw, &ih)) { free(frame); return nullptr; }
+    if (!DecodePcx24ToRgb(framePath, &frame, &fw, &fh)) { free(framePath); free(iconPath); return nullptr; }
+    if (!DecodePcx24ToRgb(iconPath, &icon, &iw, &ih)) { free(frame); free(framePath); free(iconPath); return nullptr; }
+    free(framePath);
+    free(iconPath);
 
     unsigned char* comp = (unsigned char*)malloc(fw * fh * 3);
     if (!comp) { free(frame); free(icon); return nullptr; }
@@ -209,6 +220,3 @@ static _Pcx8_* LoadPcx24CompositeAsPcx8(const char* frameName, const char* iconN
     return pcx8;
 }
 
-
-
-// ========== 注册 Hook ==========

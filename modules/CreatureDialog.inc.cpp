@@ -3,9 +3,9 @@
 // 窗口被静态 patch 为 298×cfg.window_height（默认487）。背景 id=200；名称 id=203。
 // exe 里头像/属性行/按钮/描述等坐标仍是基于原版高度(311)的硬编码，不跟随加高。
 // AdjustCreatureInfoDlg 统一调度（在 BUILD 和 DefProc hook 中对 298×window_height 窗口执行）：
-//   1) 除背景200/名称203/状态栏224/描述文本 外所有元素整体下移 shift；
+//   1) 除背景200/名称203/状态栏224/描述文本外，所有元素整体下移 shift；
 //   2) 确认/解雇/魔法书按钮和描述贴到加高后布局的正确底部位置；
-//   3) 窗口 Y 由 Hook_DlgInitClampY 贴边吸附，防止 ZCN2 绘制越屏。
+//   3) 窗口 Y 由 Hook_DlgInitClampY 贴边吸附，防止绘制越屏。
 // 上述调整对战斗/冒险/城镇三种界面一视同仁。
 
 static _Pcx8_*  s_bg_pcx8  = nullptr;
@@ -220,7 +220,7 @@ static int GetSafeRenderHeight()
     int fallback_h = o_ScreenHeight;
     int hd_h = 0;
 
-    // HD Mod/ZCN2 的实际绘制 buffer 使用启动器里的 Graphics.Resolution。
+    // 实际绘制 buffer 高度优先读取 HD Mod 启动器配置。
     // o_ScreenHeight 在 HD/OpenGL 模式下可能是桌面/逻辑高度（例如 1440），不能用于防越界。
     char path[MAX_PATH] = { 0 };
     DWORD n = GetModuleFileNameA(nullptr, path, MAX_PATH);
@@ -268,7 +268,7 @@ static int ClampCreatureDlgY(int old_y)
 
     // 两个约束都要满足：
     // 1) 整个加高后的窗口不能超出屏幕；
-    // 2) ZCN2 绘制描述框时，描述区域绝对底边不能超出屏幕。
+    // 2) 描述区域绝对底边不能超出绘制 buffer。
     int max_by_window = sy - cfg.window_height;
     int max_by_desc = sy - (cfg.desc_y + 6) - cfg.text_height;
     int max_y = (max_by_window < max_by_desc) ? max_by_window : max_by_desc;
@@ -396,7 +396,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 
         bool is_minus1_text = (id == -1 && (flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8));
 
-        // 元素下移（只执行一次）：除背景200/名称203/状态栏224/描述文本 外整体 +SHIFT
+    // 元素下移（只执行一次）：除背景200/名称203/状态栏224/描述文本外整体 +SHIFT
         if (need_shift && id != 200 && id != 203 && id != 224 && !is_minus1_text) *(short*)(it + 0x1A) = (short)(y + cfg.shift);
 
         // 确认按钮外框(66×32)：贴窗口底，距底 cfg.btn_margin_bottom。
@@ -518,15 +518,13 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     }
 
     // --- 背景：走原生 PCX8 控件路径 ---
-    // PCX16/HD_TC 显示链路颜色异常；这里把 24-bit PCX 量化到原游戏调色板，
-    // 直接替换旧背景控件(id=200)内部的 _Pcx8_*，保留旧控件 vtable/层级/绘制路径。
+    // 把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
     if (need_shift && !s_bg_pcx8 && old_bg) {
         _Pcx8_* oldPcx8 = *(_Pcx8_**)(old_bg + 0x30);
         s_bg_pcx8 = LoadPcx24QuantizedAsPcx8(cfg.bg_file, oldPcx8);
         if (!s_bg_pcx8) WriteLog("背景图加载失败: %s", cfg.bg_file);
     }
     if (need_shift && s_bg_pcx8 && old_bg) {
-        // 只拷贝像素到原对象 buffer，不替换指针。
         ReplacePcx8ItemImage(old_bg, s_bg_pcx8);
     }
 

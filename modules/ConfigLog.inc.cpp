@@ -1,7 +1,9 @@
 // ========== 配置 ==========
 
+static const size_t CONFIG_TEXT_BUFFER_SIZE = 2 * 1024; // INI 字符串配置缓冲：2KB。
+
 static struct Config {
-    char  bg_file[64];       // 背景 PCX 文件名（插件目录\pcx 下）；建议 ≤11 字符（含 .pcx），兼容 HoMM3 12字节资源名缓冲。
+    char* bg_file;          // BackgroundPcx 文件名，相对于插件目录 pcx 子目录，堆分配。
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
     int   btn_margin_bottom;// 确认按钮距窗口底部偏移（原硬编码40）
@@ -19,6 +21,7 @@ static char g_ini_path[MAX_PATH];
 static char g_log_path[MAX_PATH];
 static wchar_t g_log_path_w[MAX_PATH * 2];
 static HMODULE g_hModule = nullptr;
+static char g_default_bg_file[] = "bv_bgA.pcx";
 
 static const int MAX_LOG_FILES_TO_KEEP = 30;
 static const int MAX_LOG_FILES_TO_SCAN = 1024;
@@ -142,11 +145,22 @@ static void DoLogCleanupOnce()
 }
 
 
+static void EnsureConfigBuffers()
+{
+    if (!cfg.bg_file) {
+        cfg.bg_file = (char*)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, CONFIG_TEXT_BUFFER_SIZE);
+        if (cfg.bg_file) lstrcpynA(cfg.bg_file, g_default_bg_file, (int)CONFIG_TEXT_BUFFER_SIZE);
+    }
+}
+
 static void ReadConfig()
 {
+    EnsureConfigBuffers();
+    if (!cfg.bg_file) cfg.bg_file = g_default_bg_file;
+
     const char* f = g_ini_path;
-    GetPrivateProfileStringA("Images", "BackgroundPcx", "bv_bgA.pcx", cfg.bg_file, sizeof(cfg.bg_file), f);
-    if (!cfg.bg_file[0]) lstrcpynA(cfg.bg_file, "bv_bgA.pcx", sizeof(cfg.bg_file));
+    GetPrivateProfileStringA("Images", "BackgroundPcx", g_default_bg_file, cfg.bg_file, (DWORD)CONFIG_TEXT_BUFFER_SIZE, f);
+    if (!cfg.bg_file[0]) lstrcpynA(cfg.bg_file, g_default_bg_file, (int)CONFIG_TEXT_BUFFER_SIZE);
     // 布局参数
     cfg.shift                  = GetPrivateProfileIntA("Layout", "Shift",             13,  f);
     cfg.btn_margin_bottom      = GetPrivateProfileIntA("Layout", "BtnMarginBottom",   40,  f);

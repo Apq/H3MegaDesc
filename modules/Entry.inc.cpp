@@ -10,7 +10,7 @@ static void StartPlugin()
     _PI->WriteLoHook(0x5F3E75, Hook_BuildAdventure);
     _PI->WriteLoHook(0x5F491E, Hook_BuildTown);
 
-    // 窗口构造期 Y 吸附：修正窗口 y，避免 ZCN2 描述绘制越屏。
+    // 窗口构造期 Y 吸附：修正窗口 y，避免描述绘制越屏。
     // 底层 0x41AFA0 覆盖所有路径（包括右键临时窗口等）；上层三处覆盖各构造函数入口。
     _PI->WriteLoHook(0x41AFA0, Hook_DlgInitClampY);      // _Dlg_ 初始化统一入口
     _PI->WriteLoHook(0x5F3721, Hook_CreatureDlgY_Ebp10); // 冒险构造：y=[ebp+10]
