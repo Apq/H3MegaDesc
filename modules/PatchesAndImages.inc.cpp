@@ -118,9 +118,9 @@ static bool DecodePcx24ToRgb(const char* pcxPath, unsigned char** outRgb, int* o
 static _Pcx8_* QuantizeRgbAsPcx8(unsigned char* rgb, int w, int h, _Pcx8_* palSrc, const char* resName)
 {
     if (!rgb || !palSrc || w <= 0 || h <= 0) return nullptr;
-    _Pcx8_* pcx8 = _Pcx8_::CreateNew((char*)resName, w, h);
+    H3LoadedPcx* pcx8 = H3LoadedPcx::Create(resName, w, h);
     if (!pcx8) return nullptr;
-    pcx8->SetPaletteFrom(palSrc);
+    memcpy(&pcx8->palette888, &palSrc->palette888, sizeof(pcx8->palette888));
 
     unsigned char* dst = (unsigned char*)pcx8->buffer;
     for (int y = 0; y < h; y++) {
@@ -129,16 +129,16 @@ static _Pcx8_* QuantizeRgbAsPcx8(unsigned char* rgb, int w, int h, _Pcx8_* palSr
             int best = 0;
             int bestD = 0x7FFFFFFF;
             for (int i = 1; i < 256; i++) { // 0 通常透明/黑，按钮/背景尽量避开
-                int dr = (int)p[0] - (int)palSrc->palette24.colors[i].r;
-                int dg = (int)p[1] - (int)palSrc->palette24.colors[i].g;
-                int db = (int)p[2] - (int)palSrc->palette24.colors[i].b;
+                int dr = (int)p[0] - (int)palSrc->palette888[i].r;
+                int dg = (int)p[1] - (int)palSrc->palette888[i].g;
+                int db = (int)p[2] - (int)palSrc->palette888[i].b;
                 int d = dr*dr + dg*dg + db*db;
                 if (d < bestD) { bestD = d; best = i; if (d == 0) break; }
             }
-            dst[y * pcx8->scanline_size + x] = (unsigned char)best;
+            dst[y * pcx8->scanlineSize + x] = (unsigned char)best;
         }
     }
-    pcx8->ref_count = 0x10000;
+    pcx8->IncreaseReferences();
     return pcx8;
 }
 

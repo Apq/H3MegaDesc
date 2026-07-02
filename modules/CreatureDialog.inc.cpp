@@ -505,11 +505,11 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             if (table) {
                 const char* desc_text = *(const char**)(table + creature_id_for_desc * 0x74 + 0x1C);
                 if (desc_text && desc_text[0]) {
-                    _DlgStaticText_* desc = _DlgStaticText_::Create(
+                    H3DlgText* desc = H3DlgText::Create(
                         20 + cfg.desc_x_offset, cfg.desc_y + 6, cfg.text_width, cfg.text_height,
                         (char*)desc_text, (char*)"smalfont.fnt", 4, 3010, 0, 0);
                     if (desc) {
-                        dlg->AddItemToOwnArrayList(desc);
+                        reinterpret_cast<H3BaseDlg*>(dlg)->AddItem(reinterpret_cast<H3DlgItem*>(desc));
                         desc_item = (char*)desc;
                     }
                 }
@@ -592,7 +592,7 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
     if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
         AdjustCreatureInfoDlg(dlg);
     }
-    return CALL_2(int, __thiscall, h->GetDefaultFunc(), dlg, msg);
+    return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
 }
 
 

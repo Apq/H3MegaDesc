@@ -40,7 +40,7 @@
       <SDLCheck>false</SDLCheck>
       <ConformanceMode>false</ConformanceMode>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
-      <LanguageStandard>stdcpp17</LanguageStandard>
+      <LanguageStandard>stdcpp20</LanguageStandard>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <StructMemberAlignment>1Byte</StructMemberAlignment>
@@ -58,14 +58,9 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="MegaDesc.cpp" />
-    <ClCompile Include="deps\HoMM3_GUI.cpp" />
-    <ClCompile Include="deps\HoMM3_Res.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="deps\homm3.h" />
-    <ClInclude Include="deps\patcher_x86.hpp" />
-    <ClInclude Include="deps\HoMM3_Base.h" />
-    <ClInclude Include="deps\HoMM3_GUI.h" />
+    <ClInclude Include="deps\H3API.hpp" />
     <ClInclude Include="deps\resource.h" />
     <ClInclude Include="deps\stb_image.h" />
   </ItemGroup>
