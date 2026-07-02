@@ -121,6 +121,7 @@ static _Pcx8_* QuantizeRgbAsPcx8(unsigned char* rgb, int w, int h, _Pcx8_* palSr
     H3LoadedPcx* pcx8 = H3LoadedPcx::Create(resName, w, h);
     if (!pcx8) return nullptr;
     memcpy(&pcx8->palette888, &palSrc->palette888, sizeof(pcx8->palette888));
+    pcx8->palette565.InitiateFromPalette888(pcx8->palette888);
 
     unsigned char* dst = (unsigned char*)pcx8->buffer;
     for (int y = 0; y < h; y++) {
