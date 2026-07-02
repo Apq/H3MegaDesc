@@ -22,6 +22,7 @@ static char g_log_path[MAX_PATH];
 static wchar_t g_log_path_w[MAX_PATH * 2];
 static HMODULE g_hModule = nullptr;
 static char g_default_bg_file[] = "bv_bgA.pcx";
+static bool g_disable_log = false;
 
 static const int MAX_LOG_FILES_TO_KEEP = 30;
 static const int MAX_LOG_FILES_TO_SCAN = 1024;
@@ -38,6 +39,77 @@ static int __cdecl CompareLogFileEntryW(const void* a, const void* b)
     int cmp = CompareFileTime(&la->last_write, &lb->last_write);
     if (cmp != 0) return cmp;
     return _wcsicmp(la->path, lb->path);
+}
+
+static char* TrimAscii(char* s)
+{
+    if (!s) return s;
+    if ((unsigned char)s[0] == 0xEF && (unsigned char)s[1] == 0xBB && (unsigned char)s[2] == 0xBF)
+        s += 3;
+    while (*s == ' ' || *s == '\t') ++s;
+
+    char* end = s + strlen(s);
+    while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
+        *--end = 0;
+    return s;
+}
+
+static bool ReadDisableLogFromIniFileA(const char* ini_path)
+{
+    if (!ini_path || !ini_path[0]) return false;
+
+    HANDLE file = CreateFileA(ini_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+
+    char buf[4097];
+    DWORD bytes_read = 0;
+    BOOL ok = ReadFile(file, buf, sizeof(buf) - 1, &bytes_read, nullptr);
+    CloseHandle(file);
+    if (!ok || bytes_read == 0)
+        return false;
+    buf[bytes_read] = 0;
+
+    bool in_logging = false;
+    char* p = buf;
+    while (*p) {
+        char* line = p;
+        while (*p && *p != '\r' && *p != '\n') ++p;
+        if (*p) {
+            *p++ = 0;
+            if (p[-1] == '\r' && *p == '\n') ++p;
+        }
+
+        char* s = TrimAscii(line);
+        if (!s || !*s || *s == ';' || *s == '#')
+            continue;
+
+        if (*s == '[') {
+            char* close = strchr(s, ']');
+            if (!close) {
+                in_logging = false;
+                continue;
+            }
+            *close = 0;
+            char* section = TrimAscii(s + 1);
+            in_logging = section && _stricmp(section, "Logging") == 0;
+            continue;
+        }
+
+        if (!in_logging)
+            continue;
+
+        char* eq = strchr(s, '=');
+        if (!eq) continue;
+        *eq = 0;
+        char* key = TrimAscii(s);
+        char* value = TrimAscii(eq + 1);
+        if (key && value && _stricmp(key, "DisableLog") == 0)
+            return atoi(value) != 0;
+    }
+
+    return false;
 }
 
 static void CleanupOldLogFilesW(const wchar_t* log_dir, const wchar_t* log_base, const wchar_t* current_log_path)
@@ -77,6 +149,12 @@ static void CleanupOldLogFilesW(const wchar_t* log_dir, const wchar_t* log_base,
 
 static void SetupDatedLogPathAndCleanup(HMODULE hModule)
 {
+    if (g_disable_log) {
+        g_log_path[0] = 0;
+        g_log_path_w[0] = 0;
+        return;
+    }
+
     wchar_t module_path[MAX_PATH * 2] = { 0 };
     GetModuleFileNameW(hModule, module_path, _countof(module_path));
 
@@ -104,29 +182,6 @@ static void SetupDatedLogPathAndCleanup(HMODULE hModule)
         L"%s\\%s_%04u%02u%02u_%02u%02u%02u.log",
         dir, base, st.wYear, st.wMonth, st.wDay, st.wHour, st.wMinute, st.wSecond);
     WideCharToMultiByte(CP_UTF8, 0, g_log_path_w, -1, g_log_path, sizeof(g_log_path), nullptr, nullptr);
-    // 旧日志清理不在 DllMain 中执行（Loader Lock）；改由 DoLogCleanupOnce() 在首次 hook 时触发。
-}
-
-static bool g_log_cleaned = false;
-static void DoLogCleanupOnce()
-{
-    if (g_log_cleaned) return;
-    g_log_cleaned = true;
-    if (!g_log_path_w[0]) return;
-    wchar_t dir[MAX_PATH * 2] = { 0 };
-    wchar_t base[MAX_PATH * 2] = { 0 };
-    const wchar_t* s1 = wcsrchr(g_log_path_w, L'\\');
-    const wchar_t* s2 = wcsrchr(g_log_path_w, L'/');
-    const wchar_t* sl = s1 > s2 ? s1 : s2;
-    if (sl) {
-        int dlen = (int)(sl - g_log_path_w);
-        if (dlen >= (int)_countof(dir)) dlen = (int)_countof(dir) - 1;
-        memcpy(dir, g_log_path_w, dlen * sizeof(wchar_t));
-        dir[dlen] = 0;
-        wcsncpy_s(base, sl + 1, _TRUNCATE);
-        wchar_t* dot = wcsrchr(base, L'.');
-        if (dot) *dot = 0;
-    }
     CleanupOldLogFilesW(dir, base, g_log_path_w);
     // 直接追加日志行（WriteLog 此时尚不可见，用原始文件 API）
     HANDLE hf = CreateFileW(g_log_path_w, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

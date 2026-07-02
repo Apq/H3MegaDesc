@@ -44,6 +44,7 @@ static void WriteWideFileUtf8BomIfEmpty(HANDLE h)
 
 static void AppendUtf8LogLine(const char* text)
 {
+    if (g_disable_log) return;
     if (!g_log_path_w[0]) return;
     HANDLE h = CreateFileW(g_log_path_w, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (h == INVALID_HANDLE_VALUE) return;
@@ -56,6 +57,7 @@ static void AppendUtf8LogLine(const char* text)
 
 static void WriteLog(const char* fmt, ...)
 {
+    if (g_disable_log) return;
     char line[1024];
     SYSTEMTIME st;
     GetLocalTime(&st);
@@ -567,19 +569,16 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 // 各界面最后一个 AddItemToOwnArrayList 之后的寄存器语境：战斗 ebx=dlg；冒险 esi=dlg；城镇 esi=dlg。
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
-    DoLogCleanupOnce();
     AdjustCreatureInfoDlg((_Dlg_*)c->ebx);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildAdventure(LoHook* h, HookContext* c)
 {
-    DoLogCleanupOnce();
     AdjustCreatureInfoDlg((_Dlg_*)c->esi);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 {
-    DoLogCleanupOnce();
     AdjustCreatureInfoDlg((_Dlg_*)c->esi);
     return EXEC_DEFAULT;
 }
@@ -594,5 +593,4 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
     }
     return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
 }
-
 
