@@ -61,7 +61,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="deps\H3API.hpp" />
-    <ClInclude Include="deps\resource.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="deps\stb_image.h" />
   </ItemGroup>
   <ItemGroup>
