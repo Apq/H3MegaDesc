@@ -588,14 +588,26 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 // 用 WH_GETMESSAGE 钩子在消息泵层拦截。对话框指针通过 Hook 创建函数缓存获得。
 static HHOOK s_wheel_hook = nullptr;
 
-// 缓存最近创建的 H3DlgScrollableText 指针
+// 缓存右键弹窗最近创建的 H3DlgScrollableText 指针
 static char* s_last_scrollable_text = nullptr;
+static DWORD s_last_right_click_time = 0;
+static DWORD s_last_left_click_time = 0;
+
+static bool IsRecentRightClickPopup()
+{
+    DWORD now = GetTickCount();
+    return s_last_right_click_time >= s_last_left_click_time &&
+           s_last_right_click_time != 0 &&
+           now - s_last_right_click_time < 2000;
+}
 
 // Hook H3DlgScrollableText::Create (0x5BA360) 返回后，eax = 新对象指针
 static int __stdcall Hook_CreateScrollableText(LoHook* /*h*/, HookContext* c)
 {
-    s_last_scrollable_text = (char*)c->eax;
-    WriteLog("[Wheel] H3DlgScrollableText 创建=%p", s_last_scrollable_text);
+    if (IsRecentRightClickPopup())
+        s_last_scrollable_text = (char*)c->eax;
+    else
+        s_last_scrollable_text = nullptr;
     return EXEC_DEFAULT;
 }
 
@@ -604,41 +616,37 @@ static void ProcessWheelForScrollableText(char* st, int wheel_delta)
     if (!st) return;
     __try {
         char* scroll_bar = *(char**)(st + 0x54);
-        if (!scroll_bar) { WriteLog("[Wheel] 无滚动条"); return; }
+        if (!scroll_bar) return;
 
         int tick_count = *(int*)(scroll_bar + 0x48);
-        if (tick_count < 2) { WriteLog("[Wheel] tickCount=%d 不需滚动", tick_count); return; }
+        if (tick_count < 2) return;
 
         int tick = *(int*)(scroll_bar + 0x3C);
         int direction = (wheel_delta < 0) ? 1 : -1;
         int new_tick = tick + direction;
         if (new_tick < 0) new_tick = 0;
         if (new_tick >= tick_count) new_tick = tick_count - 1;
+        if (new_tick == tick) return;
 
-        void** sb_vt = *(void***)scroll_bar;
-        WriteLog("[Wheel] st=%p sb=%p vt=%p tick=%d/%d → %d (delta=%d)", st, scroll_bar, sb_vt, tick, tick_count, new_tick, wheel_delta);
-        if (sb_vt) {
-            WriteLog("[Wheel] vt[0]=%p vt[4]=%p vt[10]=%p vt[16]=%p", sb_vt[0], sb_vt[1], sb_vt[4], sb_vt[16]);
+        // SetTick 更新 tick 和滑块位置数据
+        THISCALL_2(void, 0x5964D0, scroll_bar, new_tick);
+        // 设置 dirty flag（模仿 FUN_00596520 的行为：渲染前设、渲染后清）
+        *(unsigned char*)(scroll_bar + 0x16) |= 1;
+
+        // 重绘滚动条（滑块）。0x596F40 检查 dirty flag 决定是否画滑块。
+        __try {
+            FASTCALL_1(void, 0x596F40, scroll_bar);
+            // 清除 dirty flag（渲染完成后）
+            *(unsigned char*)(scroll_bar + 0x16) &= (unsigned char)~1;
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            WriteLog("[Wheel] 596F40 异常 code=0x%08X", GetExceptionCode());
         }
 
-        if (new_tick != tick) {
-            WriteLog("[Wheel] 调用 SetTick(%d)...", new_tick);
-            THISCALL_2(void, 0x5964D0, scroll_bar, new_tick);
-            WriteLog("[Wheel] SetTick 完成");
-
-            // vScrollCallOwner (vtable offset 0x40 = slot 16)
-            if (sb_vt && sb_vt[16]) {
-                DWORD fn = (DWORD)sb_vt[16];
-                WriteLog("[Wheel] 调用 vScrollCallOwner=%p ...", fn);
-                THISCALL_1(void, fn, scroll_bar);
-                WriteLog("[Wheel] vScrollCallOwner 完成");
-            }
-
-            // vDrawToWindow 在消息泵中间调用会崩溃，改为让游戏窗口重绘。
-            // InvalidateRect 触发 WM_PAINT，游戏自己的渲染循环会安全重绘滚动条滑块。
-            HWND h3wnd = FindWindowA("HH3 SOUND HOST", nullptr);
-            if (h3wnd) InvalidateRect(h3wnd, nullptr, FALSE);
-            WriteLog("[Wheel] 全部完成 tick=%d", new_tick);
+        // vScrollCallOwner 最后调用：通知文本控件更新内容。
+        // 放在渲染之后，避免回调二次修改 tick 导致跳跃。
+        void** sb_vt = *(void***)scroll_bar;
+        if (sb_vt && sb_vt[16]) {
+            THISCALL_1(void, (DWORD)sb_vt[16], scroll_bar);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         WriteLog("[Wheel] ProcessWheel 异常 code=0x%08X", GetExceptionCode());
@@ -649,21 +657,22 @@ static LRESULT CALLBACK WheelGetMsgProc(int code, WPARAM wParam, LPARAM lParam)
 {
     if (code == HC_ACTION && wParam == PM_REMOVE) {
         MSG* m = (MSG*)lParam;
-        if (m->message == WM_MOUSEWHEEL) {
+        if (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP) {
+            s_last_right_click_time = GetTickCount();
+        } else if (m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONUP) {
+            s_last_left_click_time = GetTickCount();
+            s_last_scrollable_text = nullptr;
+        } else if (m->message == WM_MOUSEWHEEL) {
             short delta = (short)HIWORD(m->wParam);
-            WriteLog("[Wheel] delta=%d cached_st=%p", delta, s_last_scrollable_text);
             ProcessWheelForScrollableText(s_last_scrollable_text, delta);
         }
     }
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }
-// HiHook 0x41B120（_Dlg_::DefProc）：通用滚轮处理 + 生物信息窗口兜底。
+// HiHook 0x41B120（_Dlg_::DefProc）：生物信息窗口兜底。
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
-    // DefProc 不处理 MOUSE_WHEEL（H3 原版消息循环不转发），滚轮由 WH_GETMESSAGE 钩子处理。
-
     // 严格过滤：只有 298×cfg.window_height 且包含 id=200 背景控件的对话框才处理。
-    // 避免存档/读档/其它对话框进入后遍历未初始化的 item 数组导致崩溃。
     if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
         AdjustCreatureInfoDlg(dlg);
     }
