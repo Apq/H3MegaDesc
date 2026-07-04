@@ -37,6 +37,7 @@ PatcherInstance* _PI = nullptr;
 // 模块按顺序包含到同一个翻译单元，保证 patcher 全局对象和静态辅助函数共享同一份状态。
 #include "modules/ConfigLog.inc.cpp"
 #include "modules/CreatureDialog.inc.cpp"
+#include "modules/ScrollableTextWheel.inc.cpp"
 #include "modules/TextColorScrollFix.inc.cpp"
 #include "modules/PatchesAndImages.inc.cpp"
 #include "modules/Entry.inc.cpp"

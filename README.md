@@ -31,7 +31,7 @@ MegaDesc 是一个《英雄无敌3》HD Mod 插件，扩展生物信息窗口：
 - Visual Studio（v145 工具集）
 - 仅支持 x86（32 位）
 - 结构成员对齐：1 字节（/Zp1）
-- 源码结构：主文件 `MegaDesc.cpp` + 5 个 `modules/*.inc.cpp`（通过 `#include` 单翻译单元编译）
+- 源码结构：主文件 `MegaDesc.cpp` + 6 个 `modules/*.inc.cpp`（通过 `#include` 单翻译单元编译）
 
 ## 安装
 
