@@ -11,6 +11,14 @@ static void StartPlugin()
     // 通用对话框滚轮：右键魔法详情等 _DlgScrollableText_ 控件默认会被 _Dlg_ 吞掉滚轮。
     _PI->WriteHiHook(0x41B120, SPLICE_, EXTENDED_, THISCALL_, Hook_DlgDefProc);
 
+    // WH_GETMESSAGE 钩子：H3 原版消息循环不把 WM_MOUSEWHEEL 转发给 DefProc，
+    // 在消息泵层拦截，直接驱动当前对话框的可滚动文本控件。
+    s_wheel_hook = SetWindowsHookExW(WH_GETMESSAGE, WheelGetMsgProc, g_hModule, GetCurrentThreadId());
+    WriteLog("WH_GETMESSAGE 滚轮钩子 %s", s_wheel_hook ? "已安装" : "安装失败");
+
+    // Hook H3DlgScrollableText::Create，缓存创建的可滚动文本控件指针
+    _PI->WriteLoHook(0x5BA360, Hook_CreateScrollableText);
+
     // BUILD 阶段 hook
     _PI->WriteLoHook(0x5F4503, Hook_BuildCombat);
     _PI->WriteLoHook(0x5F3E75, Hook_BuildAdventure);

@@ -20,7 +20,7 @@ static struct Config {
 static char g_ini_path[MAX_PATH];
 static char g_log_path[MAX_PATH];
 static wchar_t g_log_path_w[MAX_PATH * 2];
-static HMODULE g_hModule = nullptr;
+HMODULE g_hModule = nullptr;
 static char g_default_bg_file[] = "bv_bgA.pcx";
 static bool g_disable_log = false;
 

@@ -583,74 +583,84 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
     return EXEC_DEFAULT;
 }
 
-static bool ItemContainsPoint(char* item, int x, int y)
+// 右键弹出的魔法详情等通用对话框包含 H3DlgScrollableText 时，
+// 滚轮消息直接转发给可滚动文本控件。H3 原版消息循环不把 WM_MOUSEWHEEL 转发给 DefProc，
+// 用 WH_GETMESSAGE 钩子在消息泵层拦截。对话框指针通过 Hook 创建函数缓存获得。
+static HHOOK s_wheel_hook = nullptr;
+
+// 缓存最近创建的 H3DlgScrollableText 指针
+static char* s_last_scrollable_text = nullptr;
+
+// Hook H3DlgScrollableText::Create (0x5BA360) 返回后，eax = 新对象指针
+static int __stdcall Hook_CreateScrollableText(LoHook* /*h*/, HookContext* c)
 {
-    if (!item) return false;
-    int ix = *(short*)(item + 0x18);
-    int iy = *(short*)(item + 0x1A);
-    int iw = *(unsigned short*)(item + 0x1C);
-    int ih = *(unsigned short*)(item + 0x1E);
-    return x >= ix && y >= iy && x < ix + iw && y < iy + ih;
+    s_last_scrollable_text = (char*)c->eax;
+    WriteLog("[Wheel] H3DlgScrollableText 创建=%p", s_last_scrollable_text);
+    return EXEC_DEFAULT;
 }
 
-static bool TryScrollDlgScrollableText(_Dlg_* dlg, _EventMsg_* msg)
+static void ProcessWheelForScrollableText(char* st, int wheel_delta)
 {
-    if (!dlg || !msg || msg->command != eMsgCommand::MOUSE_WHEEL) return false;
-
-    bool handled = false;
+    if (!st) return;
     __try {
-        unsigned* vec = (unsigned*)((char*)dlg + 0x30);
-        char** data = (char**)vec[1];
-        size_t cnt = (vec[2] >= vec[1]) ? ((size_t)(vec[2] - vec[1]) / 4) : 0;
-        if (!data || cnt > 4096) return false;
+        char* scroll_bar = *(char**)(st + 0x54);
+        if (!scroll_bar) { WriteLog("[Wheel] 无滚动条"); return; }
 
-        int local_x = msg->GetX() - *(int*)((char*)dlg + 0x18);
-        int local_y = msg->GetY() - *(int*)((char*)dlg + 0x1C);
+        int tick_count = *(int*)(scroll_bar + 0x48);
+        if (tick_count < 2) { WriteLog("[Wheel] tickCount=%d 不需滚动", tick_count); return; }
 
-        for (size_t i = 0; i < cnt; i++) {
-            char* item = data[i];
-            if (!item || *(void***)item != (void**)0x642D1C) continue;
-            if (!ItemContainsPoint(item, local_x, local_y)) continue;
+        int tick = *(int*)(scroll_bar + 0x3C);
+        int direction = (wheel_delta < 0) ? 1 : -1;
+        int new_tick = tick + direction;
+        if (new_tick < 0) new_tick = 0;
+        if (new_tick >= tick_count) new_tick = tick_count - 1;
 
-            char* scroll_bar = *(char**)(item + 0x54);
-            if (!scroll_bar || *(void***)scroll_bar != (void**)0x642CD8) continue;
+        void** sb_vt = *(void***)scroll_bar;
+        WriteLog("[Wheel] st=%p sb=%p vt=%p tick=%d/%d → %d (delta=%d)", st, scroll_bar, sb_vt, tick, tick_count, new_tick, wheel_delta);
+        if (sb_vt) {
+            WriteLog("[Wheel] vt[0]=%p vt[4]=%p vt[10]=%p vt[16]=%p", sb_vt[0], sb_vt[1], sb_vt[4], sb_vt[16]);
+        }
 
-            int tick_count = *(int*)(scroll_bar + 0x48);
-            if (tick_count < 2) continue;
+        if (new_tick != tick) {
+            WriteLog("[Wheel] 调用 SetTick(%d)...", new_tick);
+            THISCALL_2(void, 0x5964D0, scroll_bar, new_tick);
+            WriteLog("[Wheel] SetTick 完成");
 
-            int tick = *(int*)(scroll_bar + 0x3C);
-            // H3 的滚动条 +0x38 槽接收目标 tick 位置；负 wheel delta 表示向下滚动。
-            int direction = ((int)msg->subtype < 0) ? 1 : -1;
-            int new_tick = tick + direction;
-            if (new_tick < 0) new_tick = 0;
-            if (new_tick >= tick_count) new_tick = tick_count - 1;
-            if (new_tick == tick) {
-                handled = true;
-                break;
+            // vScrollCallOwner (vtable offset 0x40 = slot 16)
+            if (sb_vt && sb_vt[16]) {
+                DWORD fn = (DWORD)sb_vt[16];
+                WriteLog("[Wheel] 调用 vScrollCallOwner=%p ...", fn);
+                THISCALL_1(void, fn, scroll_bar);
+                WriteLog("[Wheel] vScrollCallOwner 完成");
             }
 
-            void** vt = *(void***)scroll_bar;
-            if (vt && vt[14]) {
-                ((void(__fastcall*)(void*, void*, int))vt[14])(scroll_bar, nullptr, new_tick);
-            } else {
-                THISCALL_2(void, 0x5964D0, scroll_bar, new_tick);
-            }
-            if (vt && vt[16]) {
-                ((void(__fastcall*)(void*, void*))vt[16])(scroll_bar, nullptr);
-            }
-            handled = true;
-            break;
+            // vDrawToWindow 在消息泵中间调用会崩溃，改为让游戏窗口重绘。
+            // InvalidateRect 触发 WM_PAINT，游戏自己的渲染循环会安全重绘滚动条滑块。
+            HWND h3wnd = FindWindowA("HH3 SOUND HOST", nullptr);
+            if (h3wnd) InvalidateRect(h3wnd, nullptr, FALSE);
+            WriteLog("[Wheel] 全部完成 tick=%d", new_tick);
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
-        handled = false;
+        WriteLog("[Wheel] ProcessWheel 异常 code=0x%08X", GetExceptionCode());
     }
-    return handled;
 }
 
+static LRESULT CALLBACK WheelGetMsgProc(int code, WPARAM wParam, LPARAM lParam)
+{
+    if (code == HC_ACTION && wParam == PM_REMOVE) {
+        MSG* m = (MSG*)lParam;
+        if (m->message == WM_MOUSEWHEEL) {
+            short delta = (short)HIWORD(m->wParam);
+            WriteLog("[Wheel] delta=%d cached_st=%p", delta, s_last_scrollable_text);
+            ProcessWheelForScrollableText(s_last_scrollable_text, delta);
+        }
+    }
+    return CallNextHookEx(nullptr, code, wParam, lParam);
+}
 // HiHook 0x41B120（_Dlg_::DefProc）：通用滚轮处理 + 生物信息窗口兜底。
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
-    if (TryScrollDlgScrollableText(dlg, msg)) return TRUE;
+    // DefProc 不处理 MOUSE_WHEEL（H3 原版消息循环不转发），滚轮由 WH_GETMESSAGE 钩子处理。
 
     // 严格过滤：只有 298×cfg.window_height 且包含 id=200 背景控件的对话框才处理。
     // 避免存档/读档/其它对话框进入后遍历未初始化的 item 数组导致崩溃。
