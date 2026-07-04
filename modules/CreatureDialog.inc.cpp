@@ -583,9 +583,75 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
     return EXEC_DEFAULT;
 }
 
-// HiHook 0x41B120（_Dlg_::DefProc）：兜底——仅在确认为生物信息窗口时才处理。
+static bool ItemContainsPoint(char* item, int x, int y)
+{
+    if (!item) return false;
+    int ix = *(short*)(item + 0x18);
+    int iy = *(short*)(item + 0x1A);
+    int iw = *(unsigned short*)(item + 0x1C);
+    int ih = *(unsigned short*)(item + 0x1E);
+    return x >= ix && y >= iy && x < ix + iw && y < iy + ih;
+}
+
+static bool TryScrollDlgScrollableText(_Dlg_* dlg, _EventMsg_* msg)
+{
+    if (!dlg || !msg || msg->command != eMsgCommand::MOUSE_WHEEL) return false;
+
+    bool handled = false;
+    __try {
+        unsigned* vec = (unsigned*)((char*)dlg + 0x30);
+        char** data = (char**)vec[1];
+        size_t cnt = (vec[2] >= vec[1]) ? ((size_t)(vec[2] - vec[1]) / 4) : 0;
+        if (!data || cnt > 4096) return false;
+
+        int local_x = msg->GetX() - *(int*)((char*)dlg + 0x18);
+        int local_y = msg->GetY() - *(int*)((char*)dlg + 0x1C);
+
+        for (size_t i = 0; i < cnt; i++) {
+            char* item = data[i];
+            if (!item || *(void***)item != (void**)0x642D1C) continue;
+            if (!ItemContainsPoint(item, local_x, local_y)) continue;
+
+            char* scroll_bar = *(char**)(item + 0x54);
+            if (!scroll_bar || *(void***)scroll_bar != (void**)0x642CD8) continue;
+
+            int tick_count = *(int*)(scroll_bar + 0x48);
+            if (tick_count < 2) continue;
+
+            int tick = *(int*)(scroll_bar + 0x3C);
+            // H3 的滚动条 +0x38 槽接收目标 tick 位置；负 wheel delta 表示向下滚动。
+            int direction = ((int)msg->subtype < 0) ? 1 : -1;
+            int new_tick = tick + direction;
+            if (new_tick < 0) new_tick = 0;
+            if (new_tick >= tick_count) new_tick = tick_count - 1;
+            if (new_tick == tick) {
+                handled = true;
+                break;
+            }
+
+            void** vt = *(void***)scroll_bar;
+            if (vt && vt[14]) {
+                ((void(__fastcall*)(void*, void*, int))vt[14])(scroll_bar, nullptr, new_tick);
+            } else {
+                THISCALL_2(void, 0x5964D0, scroll_bar, new_tick);
+            }
+            if (vt && vt[16]) {
+                ((void(__fastcall*)(void*, void*))vt[16])(scroll_bar, nullptr);
+            }
+            handled = true;
+            break;
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        handled = false;
+    }
+    return handled;
+}
+
+// HiHook 0x41B120（_Dlg_::DefProc）：通用滚轮处理 + 生物信息窗口兜底。
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
+    if (TryScrollDlgScrollableText(dlg, msg)) return TRUE;
+
     // 严格过滤：只有 298×cfg.window_height 且包含 id=200 背景控件的对话框才处理。
     // 避免存档/读档/其它对话框进入后遍历未初始化的 item 数组导致崩溃。
     if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
@@ -593,4 +659,3 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
     }
     return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
 }
-
