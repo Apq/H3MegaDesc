@@ -5,6 +5,9 @@ static void StartPlugin()
     // 窗口尺寸/布局 patch
     ApplyCreatureBoxPatches();
 
+    // H3.TextColor 在 _DlgScrollableText_ 长文本拆行后，跨行颜色需要补回当前颜色标签。
+    ApplyTextColorScrollableTextFix();
+
     // BUILD 阶段 hook
     _PI->WriteLoHook(0x5F4503, Hook_BuildCombat);
     _PI->WriteLoHook(0x5F3E75, Hook_BuildAdventure);
@@ -22,7 +25,7 @@ static void StartPlugin()
     _PI->WriteLoHook(0x5F3E54, Hook_DescTextCreateParams); // 冒险描述文本 create call
     _PI->WriteLoHook(0x5F489A, Hook_DescTextCreateParams); // 城镇描述文本 create call
 
-    WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgInitY(0x41AFA0+3), DescTextCreate(3).");
+    WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgInitY(0x41AFA0+3), DescTextCreate(3), TextColorSplitLines.");
 }
 
 // ========== DllMain ==========
