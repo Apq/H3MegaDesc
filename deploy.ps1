@@ -10,6 +10,7 @@ if (-not (Test-Path $packsDst)) {
 }
 Copy-Item "$src\MegaDesc.dll" $packsDst -Force
 Copy-Item "$PSScriptRoot\MegaDesc.ini" $packsDst -Force
+Copy-Item "$PSScriptRoot\使用说明.txt" $packsDst -Force
 
 # --- 24-bit PCX 素材部署到插件目录\pcx ---
 $imgDst = "$packsDst\pcx"

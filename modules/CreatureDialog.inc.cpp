@@ -339,9 +339,6 @@ static char* s_last_adjusted_dlg = nullptr;
 // 对一个 298×window_height 生物信息窗口执行通用布局调整：元素下移 + 按钮替换 + 描述修正。
 static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 {
-    if (!dlg) return;
-    WriteLog("[Adj] ENTER dlg=%p size=%dx%d",
-        (void*)dlg, dlg->width, dlg->height);
     if (!dlg || dlg->width != 298 || dlg->height != cfg.window_height) return;
     if (!FindDlgItem(dlg, 200)) return;  // 不是生物信息窗口，跳过
 
@@ -376,10 +373,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         short id = *(short*)(it + 0x10);
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) { need_shift = true; break; }
     }
-    if (!need_shift) {
-        WriteLog("[Adj] SKIP dlg=%p reason=already_processed need_shift=0", (void*)dlg);
-        return;
-    }
+    if (!need_shift) return;
 
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
@@ -522,42 +516,17 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         }
     }
 
-    // --- 背景：走原生 PCX8 控件路径 ---
-    // 把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
-    // 注意：原版背景图只有 298×311，dlg 高度是 487。若只换 PCX 指针，下部 176px 无背景。
-    // 因此需要把新背景图(298×487)写入到背景控件的 Y 位置（通常是 0），完全覆盖加高区域。
-    if (need_shift && !s_bg_pcx8 && old_bg) {
-        _Pcx8_* oldPcx8 = *(_Pcx8_**)(old_bg + 0x30);
-        unsigned short obw = *(unsigned short*)(old_bg + 0x1C);
-        unsigned short obh = *(unsigned short*)(old_bg + 0x1E);
-        short obx = *(short*)(old_bg + 0x18);
-        short oby = *(short*)(old_bg + 0x1A);
-        WriteLog("[BG] 首次加载 dlg=%p old_bg=%p old_pcx=%p size=%dx%d at(%d,%d) dlg_size=%dx%d bg_needed=%dx%d",
-            (void*)dlg, (void*)old_bg, (void*)oldPcx8, obw, obh, obx, oby,
-            dlg->width, dlg->height, dlg->width, dlg->height);
-        s_bg_pcx8 = LoadPcx24QuantizedAsPcx8(cfg.bg_file, oldPcx8);
-        if (!s_bg_pcx8) {
-            WriteLog("[BG] 背景图加载失败: %s", cfg.bg_file);
-        } else {
-            WriteLog("[BG] s_bg_pcx8=%p %dx%d", (void*)s_bg_pcx8, s_bg_pcx8->width, s_bg_pcx8->height);
-        }
+    // --- 背景：把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
+    // 首次加载后缓存 s_bg_pcx8；后续只做指针替换（dlg 换了但 old_bg 仍是 id=200 控件）。
+    if (!s_bg_pcx8 && old_bg) {
+        s_bg_pcx8 = LoadPcx24QuantizedAsPcx8(cfg.bg_file, *(_Pcx8_**)(old_bg + 0x30));
     }
-    if (need_shift && s_bg_pcx8 && old_bg) {
-        unsigned short obw = *(unsigned short*)(old_bg + 0x1C);
-        unsigned short obh = *(unsigned short*)(old_bg + 0x1E);
-        short obx = *(short*)(old_bg + 0x18);
-        short oby = *(short*)(old_bg + 0x1A);
-        _Pcx8_* cur_pcx = *(_Pcx8_**)(old_bg + 0x30);
-        WriteLog("[BG] 替换 dlg=%p old_bg=%p cur_pcx=%p size=%dx%d at(%d,%d) dlg=%dx%d -> s_bg_pcx8 %dx%d (size_match=%d)",
-            (void*)dlg, (void*)old_bg, (void*)cur_pcx, obw, obh, obx, oby,
-            dlg->width, dlg->height,
-            s_bg_pcx8->width, s_bg_pcx8->height,
-            (obw == s_bg_pcx8->width && obh == s_bg_pcx8->height));
+    if (s_bg_pcx8 && old_bg) {
         ReplacePcx8ItemImage(old_bg, s_bg_pcx8);
     }
 
-    // --- 按钮图像：复用原 PCX8 外框控件，位置回到 INI 的底边距控制 ---
-    if (need_shift && old_bg) {
+    // --- 按钮图像 ---
+    if (old_bg) {
         _Pcx8_* palSrc = *(_Pcx8_**)(old_bg + 0x30);
         if (!s_ok_btn[0]) {
             s_ok_btn[0] = LoadPcx24CompositeAsPcx8("bv_frmL.pcx", "bv_ok0.pcx", palSrc);
@@ -578,13 +547,13 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             s_sp_btn[3] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_sp3.pcx", palSrc);
         }
     }
-    if (need_shift && dismiss_frame && s_ds_btn[0]) {
+    if (dismiss_frame && s_ds_btn[0]) {
         UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
     }
-    if (need_shift && spell_frame && s_sp_btn[0]) {
+    if (spell_frame && s_sp_btn[0]) {
         UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn, cfg.spell_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
     }
-    if (need_shift && ok_frame && s_ok_btn[0]) {
+    if (ok_frame && s_ok_btn[0]) {
         UpdatePcx8ButtonFromDef(ok_frame, ok_def, s_ok_btn, cfg.btn_margin_bottom, dlg, (void**)s_ok_def_novtbl, &s_ok_binding);
     }
 
