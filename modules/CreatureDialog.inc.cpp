@@ -340,8 +340,8 @@ static char* s_last_adjusted_dlg = nullptr;
 static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 {
     if (!dlg) return;
-    if (s_last_adjusted_dlg == (char*)dlg) return;
-    s_last_adjusted_dlg = (char*)dlg;
+    WriteLog("[Adj] ENTER dlg=%p size=%dx%d",
+        (void*)dlg, dlg->width, dlg->height);
     if (!dlg || dlg->width != 298 || dlg->height != cfg.window_height) return;
     if (!FindDlgItem(dlg, 200)) return;  // 不是生物信息窗口，跳过
 
@@ -368,19 +368,17 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     short spell_def_old_x = -32768;
     short spell_def_old_y = -32768;
 
-    // 是否需要下移：以"本次进程内是否已处理过该 dlg 指针"为主判断，避免每帧重复累加。
-    // 生物信息窗口是模态的、同一时间只有一个；新窗口(指针不同)首次进入时下移，之后跳过。
-    // 这样不依赖具体 item id，战斗/冒险/城镇三种界面(元素 id 可能略有差异)都能正确触发一次。
-    // 兜底：若指针命中但内容仍处原始高位(头像id=201/202 y<60)，说明地址被复用、实际是新窗口，仍下移。
-    static _Dlg_* s_adjusted = nullptr;
-    bool need_shift = (dlg != s_adjusted);
+    // 多个 dlg 指针可能交替出现（如右键快速点击），不能靠 s_adjusted 指针比较判断。
+    bool need_shift = false;
+    for (size_t i = 0; i < cnt; i++) {
+        char* it = data[i];
+        if (!it) continue;
+        short id = *(short*)(it + 0x10);
+        if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) { need_shift = true; break; }
+    }
     if (!need_shift) {
-        for (size_t i = 0; i < cnt; i++) {
-            char* it = data[i];
-            if (!it) continue;
-            short id = *(short*)(it + 0x10);
-            if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) { need_shift = true; break; }
-        }
+        WriteLog("[Adj] SKIP dlg=%p reason=already_processed need_shift=0", (void*)dlg);
+        return;
     }
 
     for (size_t i = 0; i < cnt; i++) {
@@ -496,7 +494,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         }
     }
 
-    if (need_shift) s_adjusted = dlg;
 
     // --- 描述文字：若原版未创建描述控件，则补创建一个独立文本控件 ---
     // 注意：不要伪装成 id=-1，也不要直接调用底层 b_DlgStaticText_Create(flags=8)；
@@ -527,12 +524,35 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 
     // --- 背景：走原生 PCX8 控件路径 ---
     // 把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
+    // 注意：原版背景图只有 298×311，dlg 高度是 487。若只换 PCX 指针，下部 176px 无背景。
+    // 因此需要把新背景图(298×487)写入到背景控件的 Y 位置（通常是 0），完全覆盖加高区域。
     if (need_shift && !s_bg_pcx8 && old_bg) {
         _Pcx8_* oldPcx8 = *(_Pcx8_**)(old_bg + 0x30);
+        unsigned short obw = *(unsigned short*)(old_bg + 0x1C);
+        unsigned short obh = *(unsigned short*)(old_bg + 0x1E);
+        short obx = *(short*)(old_bg + 0x18);
+        short oby = *(short*)(old_bg + 0x1A);
+        WriteLog("[BG] 首次加载 dlg=%p old_bg=%p old_pcx=%p size=%dx%d at(%d,%d) dlg_size=%dx%d bg_needed=%dx%d",
+            (void*)dlg, (void*)old_bg, (void*)oldPcx8, obw, obh, obx, oby,
+            dlg->width, dlg->height, dlg->width, dlg->height);
         s_bg_pcx8 = LoadPcx24QuantizedAsPcx8(cfg.bg_file, oldPcx8);
-        if (!s_bg_pcx8) WriteLog("背景图加载失败: %s", cfg.bg_file);
+        if (!s_bg_pcx8) {
+            WriteLog("[BG] 背景图加载失败: %s", cfg.bg_file);
+        } else {
+            WriteLog("[BG] s_bg_pcx8=%p %dx%d", (void*)s_bg_pcx8, s_bg_pcx8->width, s_bg_pcx8->height);
+        }
     }
     if (need_shift && s_bg_pcx8 && old_bg) {
+        unsigned short obw = *(unsigned short*)(old_bg + 0x1C);
+        unsigned short obh = *(unsigned short*)(old_bg + 0x1E);
+        short obx = *(short*)(old_bg + 0x18);
+        short oby = *(short*)(old_bg + 0x1A);
+        _Pcx8_* cur_pcx = *(_Pcx8_**)(old_bg + 0x30);
+        WriteLog("[BG] 替换 dlg=%p old_bg=%p cur_pcx=%p size=%dx%d at(%d,%d) dlg=%dx%d -> s_bg_pcx8 %dx%d (size_match=%d)",
+            (void*)dlg, (void*)old_bg, (void*)cur_pcx, obw, obh, obx, oby,
+            dlg->width, dlg->height,
+            s_bg_pcx8->width, s_bg_pcx8->height,
+            (obw == s_bg_pcx8->width && obh == s_bg_pcx8->height));
         ReplacePcx8ItemImage(old_bg, s_bg_pcx8);
     }
 
@@ -569,6 +589,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     }
 
     // 注意：不在 BUILD 阶段直接修改 dlg->x/y。窗口位置由 Hook_DlgInitClampY 统一处理。
+    s_last_adjusted_dlg = (char*)dlg;
 }
 
 // BUILD-phase hooks：在窗口构建期（显示前）执行调整，hold/release 两种模式都覆盖。
@@ -615,6 +636,7 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
             }
         } else {
             AdjustCreatureInfoDlg(dlg);
+            s_last_adjusted_dlg = (char*)dlg;
         }
     }
     return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
