@@ -333,9 +333,15 @@ static int __stdcall Hook_DlgInitClampY(LoHook* /*h*/, HookContext* c)
     return EXEC_DEFAULT;
 }
 
+// 防止 BUILD+DefProc 重复调用 AdjustCreatureInfoDlg 导致 PCX 重复加载。
+static char* s_last_adjusted_dlg = nullptr;
+
 // 对一个 298×window_height 生物信息窗口执行通用布局调整：元素下移 + 按钮替换 + 描述修正。
 static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 {
+    if (!dlg) return;
+    if (s_last_adjusted_dlg == (char*)dlg) return;
+    s_last_adjusted_dlg = (char*)dlg;
     if (!dlg || dlg->width != 298 || dlg->height != cfg.window_height) return;
     if (!FindDlgItem(dlg, 200)) return;  // 不是生物信息窗口，跳过
 
@@ -583,12 +589,33 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
     return EXEC_DEFAULT;
 }
 
+// 空绘制函数：跳过原始 DEF 图标的绘制，防止与 BUILD 加载的新 PCX 叠影。
+// 同时更新 PCX8 外框的当前帧（normal/pressed/highlight/disabled），保留按下效果。
+static void __fastcall DismissDefDrawSkip(void* self, void* /*edx*/) {
+    DrawBoundButtonPcx8((char*)self);
+}
+
 // HiHook 0x41B120（_Dlg_::DefProc）：生物信息窗口兜底。
+// 若 BUILD 已处理（s_last_adjusted_dlg 命中），跳过原始 dismiss DEF 的绘制，防止叠影。
+static void* s_dismiss_def_novtbl[15];  // 15=槽位数
+
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
-    // 严格过滤：只有 298×cfg.window_height 且包含 id=200 背景控件的对话框才处理。
     if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
-        AdjustCreatureInfoDlg(dlg);
+        if (s_last_adjusted_dlg == (char*)dlg) {
+            // BUILD 已处理：把原始 dismiss DEF 的 Draw 替换为空操作，防止叠影。
+            char* ds_def = FindDlgItem(dlg, 30723);
+            if (ds_def) {
+                void** dvt = *(void***)ds_def;
+                if (dvt && dvt != s_dismiss_def_novtbl) {
+                    for (int i = 0; i < 15; i++) s_dismiss_def_novtbl[i] = dvt[i];
+                    s_dismiss_def_novtbl[4] = (void*)&DismissDefDrawSkip;  // Draw 槽
+                    *(void***)ds_def = s_dismiss_def_novtbl;
+                }
+            }
+        } else {
+            AdjustCreatureInfoDlg(dlg);
+        }
     }
     return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
 }
