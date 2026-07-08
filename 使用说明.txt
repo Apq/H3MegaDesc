@@ -53,7 +53,10 @@ pcx/              - 按钮素材目录
    _HD3_Data\Packs\大描述框\MegaDesc.ini
    _HD3_Data\Packs\大描述框\pcx\bg.pcx
    _HD3_Data\Packs\大描述框\pcx\bv_*.pcx
-3. 启动游戏，插件自动加载
+3. 启动 HD Mod 启动器，进入"插件"页面
+   - 在"未加载"列表中找到"大描述框"（或 MegaDesc）
+   - 点击"→"按钮，将其添加到"已加载"列表
+4. 启动游戏，插件自动生效
 
 
 四、配置说明（ MegaDesc.ini ）
