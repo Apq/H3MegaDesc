@@ -100,3 +100,8 @@ DisableLog=0               ; 1=禁用日志，0=启用日志
 <游戏目录>\_HD3_Data\Packs\大描述框\MegaDesc_YYYYMMDD_HHMMSS.log
 
 设置 DisableLog=1 可禁用日志，减少磁盘写入。
+
+开源地址
+--------
+GitHub：https://github.com/Apq/H3MegaDesc
+Gitee：  https://gitee.com/Apq/H3MegaDesc
