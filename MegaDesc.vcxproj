@@ -71,6 +71,7 @@
     <None Include="MegaDesc.ini" />
     <None Include="modules\ConfigLog.inc.cpp" />
     <None Include="modules\CreatureDialog.inc.cpp" />
+    <None Include="modules\fightvalue.inc.cpp" />
     <None Include="modules\PatchesAndImages.inc.cpp" />
     <None Include="modules\Entry.inc.cpp" />
     <None Include="deploy.bat" />

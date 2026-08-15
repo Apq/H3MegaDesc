@@ -64,6 +64,9 @@
     <None Include="modules\CreatureDialog.inc.cpp">
       <Filter>源文件</Filter>
     </None>
+    <None Include="modules\fightvalue.inc.cpp">
+      <Filter>源文件</Filter>
+    </None>
     <None Include="modules\PatchesAndImages.inc.cpp">
       <Filter>源文件</Filter>
     </None>

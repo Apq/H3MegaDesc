@@ -16,6 +16,7 @@ static _Pcx8_* LoadPcxQuantizedAsPcx8(const char* name, _Pcx8_* palSrc);
 static _Pcx8_* LoadPcxCompositeAsPcx8(const char* frameName, const char* iconName, _Pcx8_* palSrc);
 static void ReplacePcx8ItemImage(char* item, _Pcx8_* pcx);
 static int ButtonStateFromDef(char* def_item);
+static void TryAddFightValueLine(_Dlg_* dlg);
 
 // 返回 dlg 内指定 id 的控件；用于判断窗口类型。
 static char* FindDlgItem(_Dlg_* dlg, short target_id)
@@ -565,17 +566,23 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 // 各界面最后一个 AddItemToOwnArrayList 之后的寄存器语境：战斗 ebx=dlg；冒险 esi=dlg；城镇 esi=dlg。
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
-    AdjustCreatureInfoDlg((_Dlg_*)c->ebx);
+    _Dlg_* dlg = (_Dlg_*)c->ebx;
+    AdjustCreatureInfoDlg(dlg);
+    TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildAdventure(LoHook* h, HookContext* c)
 {
-    AdjustCreatureInfoDlg((_Dlg_*)c->esi);
+    _Dlg_* dlg = (_Dlg_*)c->esi;
+    AdjustCreatureInfoDlg(dlg);
+    TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 {
-    AdjustCreatureInfoDlg((_Dlg_*)c->esi);
+    _Dlg_* dlg = (_Dlg_*)c->esi;
+    AdjustCreatureInfoDlg(dlg);
+    TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 

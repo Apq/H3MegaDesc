@@ -4,6 +4,7 @@ static const size_t CONFIG_TEXT_BUFFER_SIZE = 2 * 1024; // INI 字符串配置�
 
 static struct Config {
     char* bg_file;          // BackgroundPcx 文件名，相对于插件目录 pcx 子目录，堆分配。
+    char  label_fight_value[64]; // 生物信息窗口第二行标签。
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
     int   btn_margin_bottom;// 确认按钮距窗口底部偏移（原硬编码40）
@@ -14,6 +15,7 @@ static struct Config {
     int   info_bar_margin_bottom; // 详细信息栏距窗口底部偏移（原26）
     int   window_height;    // 窗口高度（exe patch 值，默认383；原版311）
     int   desc_x_offset;   // 描述文字水平偏移（正值右移，原0，默认5）
+    int   fight_value_y_offset; // 战斗价值行相对名称行的 Y 偏移（默认19）
 } cfg;
 
 static char g_ini_path[MAX_PATH];
@@ -51,6 +53,25 @@ static char* TrimAscii(char* s)
     while (end > s && (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '\r' || end[-1] == '\n'))
         *--end = 0;
     return s;
+}
+
+static void NormalizeUtf8ConfigStringToAnsi(char* text, int capacity)
+{
+    if (!text || capacity <= 1 || !text[0]) return;
+
+    int wide_len = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, nullptr, 0);
+    if (wide_len <= 0 || wide_len > 256) return;
+
+    wchar_t wide[256];
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text, -1, wide, wide_len)) return;
+
+    BOOL used_default = FALSE;
+    char ansi[256];
+    int ansi_len = WideCharToMultiByte(CP_ACP, 0, wide, -1, ansi, sizeof(ansi), nullptr, &used_default);
+    if (ansi_len <= 0 || used_default) return;
+
+    strncpy(text, ansi, capacity - 1);
+    text[capacity - 1] = 0;
 }
 
 static bool ReadDisableLogFromIniFileA(const char* ini_path)
@@ -215,6 +236,8 @@ static void ReadConfig()
     const char* f = g_ini_path;
     GetPrivateProfileStringA("Images", "BackgroundPcx", g_default_bg_file, cfg.bg_file, (DWORD)CONFIG_TEXT_BUFFER_SIZE, f);
     if (!cfg.bg_file[0]) lstrcpynA(cfg.bg_file, g_default_bg_file, (int)CONFIG_TEXT_BUFFER_SIZE);
+    GetPrivateProfileStringA("Format", "LabelFightValue", "Fight Value", cfg.label_fight_value, sizeof(cfg.label_fight_value), f);
+    NormalizeUtf8ConfigStringToAnsi(cfg.label_fight_value, sizeof(cfg.label_fight_value));
     // 布局参数
     cfg.shift                  = GetPrivateProfileIntA("Layout", "Shift",             13,  f);
     cfg.btn_margin_bottom      = GetPrivateProfileIntA("Layout", "BtnMarginBottom",   40,  f);
@@ -225,4 +248,7 @@ static void ReadConfig()
     cfg.info_bar_margin_bottom = GetPrivateProfileIntA("Layout", "InfoBarMarginBottom",26, f);
     cfg.window_height          = GetPrivateProfileIntA("Layout", "WindowHeight",      383, f);
     cfg.desc_x_offset          = GetPrivateProfileIntA("Layout", "DescXOffset",         5, f);
+    cfg.fight_value_y_offset   = GetPrivateProfileIntA("Layout", "FightValueYOffset",  19, f);
+    if (cfg.fight_value_y_offset < -40) cfg.fight_value_y_offset = -40;
+    if (cfg.fight_value_y_offset > 80) cfg.fight_value_y_offset = 80;
 }
