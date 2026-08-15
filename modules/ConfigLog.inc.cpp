@@ -5,6 +5,8 @@ static const size_t CONFIG_TEXT_BUFFER_SIZE = 2 * 1024; // INI 字符串配置�
 static struct Config {
     char* bg_file;          // BackgroundPcx 文件名，相对于插件目录 pcx 子目录，堆分配。
     char  label_fight_value[64]; // 生物信息窗口第二行标签。
+    bool  enable_right_click_scroll; // 启用右键魔法描述框滚轮翻页，默认关闭。
+    bool  enable_text_color_fix;      // 启用滚动文本跨行颜色补丁，默认关闭。
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
     int   btn_margin_bottom;// 确认按钮距窗口底部偏移（原硬编码40）
@@ -238,6 +240,8 @@ static void ReadConfig()
     if (!cfg.bg_file[0]) lstrcpynA(cfg.bg_file, g_default_bg_file, (int)CONFIG_TEXT_BUFFER_SIZE);
     GetPrivateProfileStringA("Format", "LabelFightValue", "Fight Value", cfg.label_fight_value, sizeof(cfg.label_fight_value), f);
     NormalizeUtf8ConfigStringToAnsi(cfg.label_fight_value, sizeof(cfg.label_fight_value));
+    cfg.enable_right_click_scroll = GetPrivateProfileIntA("Features", "EnableRightClickScroll", 0, f) != 0;
+    cfg.enable_text_color_fix      = GetPrivateProfileIntA("Features", "EnableTextColorFix",      0, f) != 0;
     // 布局参数
     cfg.shift                  = GetPrivateProfileIntA("Layout", "Shift",             13,  f);
     cfg.btn_margin_bottom      = GetPrivateProfileIntA("Layout", "BtnMarginBottom",   40,  f);

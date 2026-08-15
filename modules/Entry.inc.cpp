@@ -6,18 +6,25 @@ static void StartPlugin()
     ApplyCreatureBoxPatches();
 
     // H3.TextColor 在 _DlgScrollableText_ 长文本拆行后，跨行颜色需要补回当前颜色标签。
-    ApplyTextColorScrollableTextFix();
+    if (cfg.enable_text_color_fix)
+        ApplyTextColorScrollableTextFix();
+    else
+        WriteLog("TextColor 滚动文本跨行颜色补丁已关闭。");
 
     // 生物信息窗口兜底：DefProc 只做布局补救，滚轮由 WH_GETMESSAGE 处理。
     _PI->WriteHiHook(0x41B120, SPLICE_, EXTENDED_, THISCALL_, Hook_DlgDefProc);
 
     // WH_GETMESSAGE 钩子：H3 原版消息循环不把 WM_MOUSEWHEEL 转发给 DefProc。
     // 仅接管右键弹窗创建的滚动文本，左键弹窗保留原生滚动。
-    s_wheel_hook = SetWindowsHookExW(WH_GETMESSAGE, WheelGetMsgProc, g_hModule, GetCurrentThreadId());
-    WriteLog("WH_GETMESSAGE 滚轮钩子 %s", s_wheel_hook ? "已安装" : "安装失败");
+    if (cfg.enable_right_click_scroll) {
+        s_wheel_hook = SetWindowsHookExW(WH_GETMESSAGE, WheelGetMsgProc, g_hModule, GetCurrentThreadId());
+        WriteLog("WH_GETMESSAGE 滚轮钩子 %s", s_wheel_hook ? "已安装" : "安装失败");
 
-    // Hook H3DlgScrollableText::Create，缓存右键弹窗创建的可滚动文本控件指针
-    _PI->WriteLoHook(0x5BA360, Hook_CreateScrollableText);
+        // Hook H3DlgScrollableText::Create，缓存右键弹窗创建的可滚动文本控件指针
+        _PI->WriteLoHook(0x5BA360, Hook_CreateScrollableText);
+    } else {
+        WriteLog("右键魔法描述框滚轮翻页补丁已关闭。");
+    }
 
     // BUILD 阶段 hook
     _PI->WriteLoHook(0x5F4503, Hook_BuildCombat);
@@ -36,7 +43,7 @@ static void StartPlugin()
     _PI->WriteLoHook(0x5F3E54, Hook_DescTextCreateParams); // 冒险描述文本 create call
     _PI->WriteLoHook(0x5F489A, Hook_DescTextCreateParams); // 城镇描述文本 create call
 
-    WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgDefProc(0x41B120), ScrollableTextCreate(0x5BA360), DlgInitY(0x41AFA0+3), DescTextCreate(3), TextColorSplitLines.");
+    WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgDefProc(0x41B120), DlgInitY(0x41AFA0+3), DescTextCreate(3)；滚轮/颜色补丁按 Features 配置。");
 }
 
 // ========== DllMain ==========
