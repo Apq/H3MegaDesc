@@ -7,13 +7,12 @@ static struct Config {
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
     int   btn_margin_bottom;// 确认按钮距窗口底部偏移（原硬编码40）
-    int   dismiss_btn_margin_bottom;  // 解雇按钮距窗口底部偏移（默认90）
-    int   spell_btn_margin_bottom;    // 魔法书/施法按钮距窗口底部偏移（默认132）
+    int   dismiss_btn_margin_bottom;  // 解雇/魔法书按钮共用的上方位置距窗口底部偏移（默认90）
     int   desc_y;           // 描述文字框 Y 坐标（原硬编码232+SHIFT=248）
-    int   text_height;      // 描述文本区高度（默认207，原版105）
+    int   text_height;      // 描述文本区高度（默认105，适配298×383底图）
     int   text_width;       // 描述文本区宽度（exe patch 值，原0xC8=200）
     int   info_bar_margin_bottom; // 详细信息栏距窗口底部偏移（原26）
-    int   window_height;    // 窗口高度（exe patch 值，原0x1E7=487）
+    int   window_height;    // 窗口高度（exe patch 值，默认383；原版311）
     int   desc_x_offset;   // 描述文字水平偏移（正值右移，原0，默认5）
 } cfg;
 
@@ -21,7 +20,7 @@ static char g_ini_path[MAX_PATH];
 static char g_log_path[MAX_PATH];
 static wchar_t g_log_path_w[MAX_PATH * 2];
 HMODULE g_hModule = nullptr;
-static char g_default_bg_file[] = "bv_bgA.pcx";
+static char g_default_bg_file[] = "bv_bg.pcx";
 static bool g_disable_log = false;
 
 static const int MAX_LOG_FILES_TO_KEEP = 30;
@@ -220,11 +219,10 @@ static void ReadConfig()
     cfg.shift                  = GetPrivateProfileIntA("Layout", "Shift",             13,  f);
     cfg.btn_margin_bottom      = GetPrivateProfileIntA("Layout", "BtnMarginBottom",   40,  f);
     cfg.dismiss_btn_margin_bottom = GetPrivateProfileIntA("Layout", "DismissBtnMarginBottom", 90, f);
-    cfg.spell_btn_margin_bottom   = GetPrivateProfileIntA("Layout", "SpellBtnMarginBottom",  132, f);
     cfg.desc_y                 = GetPrivateProfileIntA("Layout", "DescY",             248, f);
-    cfg.text_height            = GetPrivateProfileIntA("Layout", "TextHeight",        207, f);
+    cfg.text_height            = GetPrivateProfileIntA("Layout", "TextHeight",        105, f);
     cfg.text_width             = GetPrivateProfileIntA("Layout", "TextWidth",         200, f);
     cfg.info_bar_margin_bottom = GetPrivateProfileIntA("Layout", "InfoBarMarginBottom",26, f);
-    cfg.window_height          = GetPrivateProfileIntA("Layout", "WindowHeight",      487, f);
+    cfg.window_height          = GetPrivateProfileIntA("Layout", "WindowHeight",      383, f);
     cfg.desc_x_offset          = GetPrivateProfileIntA("Layout", "DescXOffset",         5, f);
 }

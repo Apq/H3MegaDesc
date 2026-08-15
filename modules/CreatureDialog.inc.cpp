@@ -1,6 +1,6 @@
 // ========== 生物信息窗口布局调整 ==========
 //
-// 窗口被静态 patch 为 298×cfg.window_height（默认487）。背景 id=200；名称 id=203。
+// 窗口被静态 patch 为 298×cfg.window_height（默认383）。背景 id=200；名称 id=203。
 // exe 里头像/属性行/按钮/描述等坐标仍是基于原版高度(311)的硬编码，不跟随加高。
 // AdjustCreatureInfoDlg 统一调度（在 BUILD 和 DefProc hook 中对 298×window_height 窗口执行）：
 //   1) 除背景200/名称203/状态栏224/描述文本外，所有元素整体下移 shift；
@@ -12,8 +12,8 @@ static _Pcx8_*  s_bg_pcx8  = nullptr;
 static _Pcx8_*  s_ok_btn[4] = { nullptr, nullptr, nullptr, nullptr };
 static _Pcx8_*  s_ds_btn[4] = { nullptr, nullptr, nullptr, nullptr };
 static _Pcx8_*  s_sp_btn[4] = { nullptr, nullptr, nullptr, nullptr };
-static _Pcx8_* LoadPcx24QuantizedAsPcx8(const char* name, _Pcx8_* palSrc);
-static _Pcx8_* LoadPcx24CompositeAsPcx8(const char* frameName, const char* iconName, _Pcx8_* palSrc);
+static _Pcx8_* LoadPcxQuantizedAsPcx8(const char* name, _Pcx8_* palSrc);
+static _Pcx8_* LoadPcxCompositeAsPcx8(const char* frameName, const char* iconName, _Pcx8_* palSrc);
 static void ReplacePcx8ItemImage(char* item, _Pcx8_* pcx);
 static int ButtonStateFromDef(char* def_item);
 
@@ -405,10 +405,10 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             ok_frame = it;
         } else if (id == 30722) {
             // 确认按钮 DEF 本体：后续仅保留点击命中，绘制由 PCX8 外框控件承担。
-            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.btn_margin_bottom + 1);
+            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.btn_margin_bottom);
             ok_def = it;
         } else if (id == 30723) {
-            // 解雇 DEF 本体：Y 由 DismissBtnMarginBottom 控制。
+            // 解雇 DEF 本体：与魔法书共用上方按钮位置。
             *(short*)(it + 0x18) = 215;
             *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
@@ -416,12 +416,12 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             dismiss_def = it;
         } else if (id == 30724 || id == 301) {
             // 魔法书/施法 DEF 本体：id=30724 是部分场景，id=301 是战场左键己方紫龙。
-            // Y 由 SpellBtnMarginBottom 控制；后续仅保留点击命中。
+            // 与解雇按钮共用上方按钮位置；后续仅保留点击命中。
             // 先记录原始位置，用于在 id=-1 小控件里匹配真正的魔法书金框。
             spell_def_old_x = *(short*)(it + 0x18);
             spell_def_old_y = *(short*)(it + 0x1A);
             *(short*)(it + 0x18) = 215;
-            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.spell_btn_margin_bottom);
+            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             spell_def = it;
@@ -437,7 +437,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
                 dismiss_frame = it;
             } else if (has_spell && ((has_dismiss && minus1_small == 1) || (!has_dismiss && minus1_small == 0))) {
                 *(short*)(it + 0x18) = 215;
-                *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.spell_btn_margin_bottom);
+                *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
                 *(unsigned short*)(it + 0x1C) = 66;
                 *(unsigned short*)(it + 0x1E) = 32;
                 spell_frame = it;
@@ -481,7 +481,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         }
         if (best) {
             *(short*)(best + 0x18) = 215;
-            *(short*)(best + 0x1A) = (short)(dlg->height - 32 - cfg.spell_btn_margin_bottom);
+            *(short*)(best + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(best + 0x1C) = 66;
             *(unsigned short*)(best + 0x1E) = 32;
             spell_frame = best;
@@ -519,7 +519,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     // --- 背景：把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
     // 首次加载后缓存 s_bg_pcx8；后续只做指针替换（dlg 换了但 old_bg 仍是 id=200 控件）。
     if (!s_bg_pcx8 && old_bg) {
-        s_bg_pcx8 = LoadPcx24QuantizedAsPcx8(cfg.bg_file, *(_Pcx8_**)(old_bg + 0x30));
+        s_bg_pcx8 = LoadPcxQuantizedAsPcx8(cfg.bg_file, *(_Pcx8_**)(old_bg + 0x30));
     }
     if (s_bg_pcx8 && old_bg) {
         ReplacePcx8ItemImage(old_bg, s_bg_pcx8);
@@ -529,29 +529,29 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     if (old_bg) {
         _Pcx8_* palSrc = *(_Pcx8_**)(old_bg + 0x30);
         if (!s_ok_btn[0]) {
-            s_ok_btn[0] = LoadPcx24CompositeAsPcx8("bv_frmL.pcx", "bv_ok0.pcx", palSrc);
-            s_ok_btn[1] = LoadPcx24CompositeAsPcx8("bv_frmL.pcx", "bv_ok1.pcx", palSrc);
-            s_ok_btn[2] = LoadPcx24CompositeAsPcx8("bv_frmL.pcx", "bv_ok2.pcx", palSrc);
-            s_ok_btn[3] = LoadPcx24CompositeAsPcx8("bv_frmL.pcx", "bv_ok3.pcx", palSrc);
+            s_ok_btn[0] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok0.pcx", palSrc);
+            s_ok_btn[1] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok1.pcx", palSrc);
+            s_ok_btn[2] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok2.pcx", palSrc);
+            s_ok_btn[3] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok3.pcx", palSrc);
         }
         if (!s_ds_btn[0]) {
-            s_ds_btn[0] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_ds0.pcx", palSrc);
-            s_ds_btn[1] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_ds1.pcx", palSrc);
-            s_ds_btn[2] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_ds2.pcx", palSrc);
-            s_ds_btn[3] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_ds3.pcx", palSrc);
+            s_ds_btn[0] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds0.pcx", palSrc);
+            s_ds_btn[1] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds1.pcx", palSrc);
+            s_ds_btn[2] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds2.pcx", palSrc);
+            s_ds_btn[3] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds3.pcx", palSrc);
         }
         if (!s_sp_btn[0]) {
-            s_sp_btn[0] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_sp0.pcx", palSrc);
-            s_sp_btn[1] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_sp1.pcx", palSrc);
-            s_sp_btn[2] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_sp2.pcx", palSrc);
-            s_sp_btn[3] = LoadPcx24CompositeAsPcx8("bv_frmS.pcx", "bv_sp3.pcx", palSrc);
+            s_sp_btn[0] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp0.pcx", palSrc);
+            s_sp_btn[1] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp1.pcx", palSrc);
+            s_sp_btn[2] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp2.pcx", palSrc);
+            s_sp_btn[3] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp3.pcx", palSrc);
         }
     }
     if (dismiss_frame && s_ds_btn[0]) {
         UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
     }
     if (spell_frame && s_sp_btn[0]) {
-        UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn, cfg.spell_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
+        UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
     }
     if (ok_frame && s_ok_btn[0]) {
         UpdatePcx8ButtonFromDef(ok_frame, ok_def, s_ok_btn, cfg.btn_margin_bottom, dlg, (void**)s_ok_def_novtbl, &s_ok_binding);

@@ -53,11 +53,11 @@ static void ApplyCreatureBoxPatches()
     _PI->WriteHexPatch(0x5F48EE, iy_hex);  // 城镇
 }
 
-// ========== 图片加载器（24-bit / 3-plane PCX） ==========
-// 直接读取插件目录 pcx\*.pcx，不走游戏资源系统；支持 bpp=8, planes=3 的 24-bit PCX。
+// ========== 图片加载器（8-bit indexed / 24-bit PCX） ==========
+// 直接读取插件目录 pcx\*.pcx，不走游戏资源系统；支持 8-bit 单平面索引 PCX 和 24-bit 三平面 PCX。
 // 输出 RGB888 → 量化到游戏调色板 → _Pcx8_。
 
-static bool DecodePcx24ToRgb(const char* pcxPath, unsigned char** outRgb, int* outW, int* outH)
+static bool DecodePcxToRgb(const char* pcxPath, unsigned char** outRgb, int* outW, int* outH)
 {
     *outRgb = nullptr; *outW = 0; *outH = 0;
     FILE* f = fopen(pcxPath, "rb");
@@ -76,9 +76,20 @@ static bool DecodePcx24ToRgb(const char* pcxPath, unsigned char** outRgb, int* o
     int planes = hdr[65];
     int bytesPerLine = hdr[66] | (hdr[67] << 8);
 
-    if (hdr[0] != 0x0A || hdr[2] != 1 || bpp != 8 || planes != 3 || w <= 0 || h <= 0 || bytesPerLine < w) {
+    if (hdr[0] != 0x0A || hdr[2] != 1 || bpp != 8 || (planes != 1 && planes != 3)
+        || w <= 0 || h <= 0 || bytesPerLine < w) {
         fclose(f);
         return false;
+    }
+
+    unsigned char indexedPalette[768];
+    if (planes == 1) {
+        if (fseek(f, -769, SEEK_END) != 0 || fgetc(f) != 0x0C
+            || fread(indexedPalette, 1, sizeof(indexedPalette), f) != sizeof(indexedPalette)
+            || fseek(f, 128, SEEK_SET) != 0) {
+            fclose(f);
+            return false;
+        }
     }
 
     unsigned char* rgb = (unsigned char*)malloc(w * h * 3);
@@ -100,12 +111,22 @@ static bool DecodePcx24ToRgb(const char* pcxPath, unsigned char** outRgb, int* o
             }
             while (count-- > 0 && pos < need) line[pos++] = (unsigned char)val;
         }
-        unsigned char* rPlane = line;
-        unsigned char* gPlane = line + bytesPerLine;
-        unsigned char* bPlane = line + bytesPerLine * 2;
-        for (int x = 0; x < w; x++) {
-            unsigned char* p = rgb + (y * w + x) * 3;
-            p[0] = rPlane[x]; p[1] = gPlane[x]; p[2] = bPlane[x];
+        if (planes == 3) {
+            unsigned char* rPlane = line;
+            unsigned char* gPlane = line + bytesPerLine;
+            unsigned char* bPlane = line + bytesPerLine * 2;
+            for (int x = 0; x < w; x++) {
+                unsigned char* p = rgb + (y * w + x) * 3;
+                p[0] = rPlane[x]; p[1] = gPlane[x]; p[2] = bPlane[x];
+            }
+        } else {
+            for (int x = 0; x < w; x++) {
+                unsigned char* p = rgb + (y * w + x) * 3;
+                unsigned char index = line[x];
+                p[0] = indexedPalette[index * 3];
+                p[1] = indexedPalette[index * 3 + 1];
+                p[2] = indexedPalette[index * 3 + 2];
+            }
         }
     }
 
@@ -143,7 +164,7 @@ static _Pcx8_* QuantizeRgbAsPcx8(unsigned char* rgb, int w, int h, _Pcx8_* palSr
     return pcx8;
 }
 
-static _Pcx8_* LoadPcx24QuantizedAsPcx8(const char* name, _Pcx8_* palSrc)
+static _Pcx8_* LoadPcxQuantizedAsPcx8(const char* name, _Pcx8_* palSrc)
 {
     char path[MAX_PATH];
     GetModuleFileNameA(g_hModule, path, MAX_PATH);
@@ -157,7 +178,7 @@ static _Pcx8_* LoadPcx24QuantizedAsPcx8(const char* name, _Pcx8_* palSrc)
 
     unsigned char* rgb = nullptr;
     int w = 0, h = 0;
-    if (!DecodePcx24ToRgb(pcxPath, &rgb, &w, &h)) { free(pcxPath); return nullptr; }
+    if (!DecodePcxToRgb(pcxPath, &rgb, &w, &h)) { free(pcxPath); return nullptr; }
     free(pcxPath);
 
     _Pcx8_* pcx8 = QuantizeRgbAsPcx8(rgb, w, h, palSrc, "bv_q8");
@@ -165,7 +186,7 @@ static _Pcx8_* LoadPcx24QuantizedAsPcx8(const char* name, _Pcx8_* palSrc)
     return pcx8;
 }
 
-static _Pcx8_* LoadPcx24CompositeAsPcx8(const char* frameName, const char* iconName, _Pcx8_* palSrc)
+static _Pcx8_* LoadPcxCompositeAsPcx8(const char* frameName, const char* iconName, _Pcx8_* palSrc)
 {
     char path[MAX_PATH];
     GetModuleFileNameA(g_hModule, path, MAX_PATH);
@@ -185,8 +206,8 @@ static _Pcx8_* LoadPcx24CompositeAsPcx8(const char* frameName, const char* iconN
 
     unsigned char *frame = nullptr, *icon = nullptr;
     int fw = 0, fh = 0, iw = 0, ih = 0;
-    if (!DecodePcx24ToRgb(framePath, &frame, &fw, &fh)) { free(framePath); free(iconPath); return nullptr; }
-    if (!DecodePcx24ToRgb(iconPath, &icon, &iw, &ih)) { free(frame); free(framePath); free(iconPath); return nullptr; }
+    if (!DecodePcxToRgb(framePath, &frame, &fw, &fh)) { free(framePath); free(iconPath); return nullptr; }
+    if (!DecodePcxToRgb(iconPath, &icon, &iw, &ih)) { free(frame); free(framePath); free(iconPath); return nullptr; }
     free(framePath);
     free(iconPath);
 
