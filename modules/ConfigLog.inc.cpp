@@ -18,6 +18,8 @@ static struct Config {
     int   window_height;    // 窗口高度（exe patch 值，默认383；原版311）
     int   desc_x_offset;   // 描述文字水平偏移（正值右移，原0，默认5）
     int   fight_value_y_offset; // 战斗价值行相对名称行的 Y 偏移（默认19）
+    int   upgrade_btn_margin_left;    // 升级按钮左上角距窗口左侧（默认230）
+    int   upgrade_btn_margin_bottom; // 升级按钮左上角距窗口底部（默认181）
 } cfg;
 
 static char g_ini_path[MAX_PATH];
@@ -253,6 +255,12 @@ static void ReadConfig()
     cfg.window_height          = GetPrivateProfileIntA("Layout", "WindowHeight",      383, f);
     cfg.desc_x_offset          = GetPrivateProfileIntA("Layout", "DescXOffset",         5, f);
     cfg.fight_value_y_offset   = GetPrivateProfileIntA("Layout", "FightValueYOffset",  19, f);
+    cfg.upgrade_btn_margin_left   = GetPrivateProfileIntA("Layout", "UpgradeBtnMarginLeft",   230, f);
+    cfg.upgrade_btn_margin_bottom = GetPrivateProfileIntA("Layout", "UpgradeBtnMarginBottom", 181, f);
     if (cfg.fight_value_y_offset < -40) cfg.fight_value_y_offset = -40;
     if (cfg.fight_value_y_offset > 80) cfg.fight_value_y_offset = 80;
+    if (cfg.upgrade_btn_margin_left < 0) cfg.upgrade_btn_margin_left = 0;
+    if (cfg.upgrade_btn_margin_left > 298) cfg.upgrade_btn_margin_left = 298;
+    if (cfg.upgrade_btn_margin_bottom < 0) cfg.upgrade_btn_margin_bottom = 0;
+    if (cfg.upgrade_btn_margin_bottom > cfg.window_height) cfg.upgrade_btn_margin_bottom = cfg.window_height;
 }
