@@ -403,16 +403,22 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
     // 多个 dlg 指针可能交替出现（如右键快速点击），不能靠 s_adjusted 指针比较判断。
     bool need_shift = false;
     bool need_upgrade_sync = false;
+    const short upgrade_gap = 20;
+    const short upgrade_frame_height_default = 34;
+    const short button_right_default = 215 + 66;
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
         if (!it) continue;
         short id = *(short*)(it + 0x10);
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
-        if (id == 300 && *(void***)it == (void**)0x63BB54
-            && (*(short*)(it + 0x18) != 75
-                || *(short*)(it + 0x1A) != (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom))) {
+        if (id == 300 && *(void***)it == (void**)0x63BB54) {
             // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
-            need_upgrade_sync = true;
+            short expected_x = (short)(button_right_default - *(unsigned short*)(it + 0x1C));
+            short expected_y = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom
+                - upgrade_gap - upgrade_frame_height_default + 1);
+            if (*(short*)(it + 0x18) != expected_x || *(short*)(it + 0x1A) != expected_y) {
+                need_upgrade_sync = true;
+            }
         }
     }
     if (!need_shift && !need_upgrade_sync) return;
@@ -471,7 +477,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
             spell_def = it;
         } else if (id == 300 && vt == (void**)0x63BB54) {
             // 原版升级 DEF 的 item id 是 300；动作 13 由原版事件分发器映射，不能把 13 当 item id。
-            // 只记录原版 item；稍后按已确认的 Box46x32.pcx / iViewCr.def 相对坐标移动。
+            // 只记录原版 item；稍后按原版金框/DEF 的相对坐标移动。
             upgrade_def = it;
         } else if (id == -1 && ih < 100 && vt == (void**)0x63BA94) {
             // id=-1 小控件：按钮金框，先只收集，不再按出现顺序猜解雇/魔法书/升级归属。
@@ -497,6 +503,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
     }
 
     // 通过原版 DEF 的原始坐标匹配各自的金框，避免升级框被按出现顺序误认成解雇框。
+    short dismiss_top = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+    short button_right = button_right_default;
     if (has_dismiss && dismiss_def) {
         dismiss_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
             dismiss_def_old_x, dismiss_def_old_y, nullptr, nullptr);
@@ -517,32 +525,70 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
             *(unsigned short*)(spell_frame + 0x1E) = 32;
         }
     }
+    if (dismiss_frame) {
+        button_right = (short)(*(short*)(dismiss_frame + 0x18) + *(unsigned short*)(dismiss_frame + 0x1C));
+    }
     if (upgrade_def) {
         upgrade_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
             75, 237, dismiss_frame, spell_frame);
-        // 原版升级组固定为 Box46x32(x=74,y=236) + iViewCr.def(x=75,y=237)。
-        // DEF 始终按这个已确认的 1px 相对偏移移动；不能因为金框未枚举到而留下旧命中区，
-        // 也不能把已经移动过的坐标再次当作原始坐标，导致 DefProc 重扫时越移越远。
-        const short original_frame_x = 74;
-        const short original_frame_y = 236;
-        const short original_def_x = 75;
-        const short original_def_y = 237;
-        short frame_x = original_frame_x;
-        short frame_h = 34;
+        // 重复扫描时升级框已经位于新位置，旧坐标匹配不到；按目标几何关系再找一次。
         if (upgrade_frame) {
+            short candidate_w = *(unsigned short*)(upgrade_frame + 0x1C);
+            short candidate_h = *(unsigned short*)(upgrade_frame + 0x1E);
+            short target_x = (short)(button_right - candidate_w);
+            short target_y = (short)(dismiss_top - upgrade_gap - candidate_h);
+            short candidate_x = *(short*)(upgrade_frame + 0x18);
+            short candidate_y = *(short*)(upgrade_frame + 0x1A);
+            bool old_position = (candidate_x == 74 && candidate_y == 236);
+            bool new_position = (candidate_x == target_x && candidate_y == target_y);
+            if (!old_position && !new_position) upgrade_frame = nullptr;
+        }
+        if (!upgrade_frame) {
+            // 优先识别已经移动后的目标位置，首次构建再识别原版位置。
             for (int i = 0; i < small_frame_count; i++) {
-                if (small_frames[i] == upgrade_frame) {
-                    frame_x = small_frame_x[i];
+                char* candidate = small_frames[i];
+                if (!candidate || candidate == dismiss_frame || candidate == spell_frame
+                    || !IsSmallPcx8Frame(candidate)) continue;
+                short candidate_w = *(unsigned short*)(candidate + 0x1C);
+                short candidate_h = *(unsigned short*)(candidate + 0x1E);
+                short target_x = (short)(button_right - candidate_w);
+                short target_y = (short)(dismiss_top - upgrade_gap - candidate_h);
+                if (small_frame_x[i] == target_x && small_frame_y[i] == target_y) {
+                    upgrade_frame = candidate;
                     break;
                 }
             }
+            if (!upgrade_frame) {
+                for (int i = 0; i < small_frame_count; i++) {
+                    char* candidate = small_frames[i];
+                    if (!candidate || candidate == dismiss_frame || candidate == spell_frame
+                        || !IsSmallPcx8Frame(candidate)) continue;
+                    if (small_frame_x[i] == 74 && small_frame_y[i] == 236) {
+                        upgrade_frame = candidate;
+                        break;
+                    }
+                }
+            }
+        }
+        // 升级按钮底部位于解雇按钮顶部上方20px；金框和 DEF 命中区均右对齐解雇按钮。
+        // DEF 不改原版尺寸，只同步移动位置，保留原版事件分发和升级逻辑。
+        const short original_frame_y = 236;
+        const short original_def_y = 237;
+        short frame_w = 46;
+        short frame_h = upgrade_frame_height_default;
+        if (upgrade_frame) {
+            frame_w = *(short*)(upgrade_frame + 0x1C);
             frame_h = *(short*)(upgrade_frame + 0x1E);
         }
-        short target_y = (short)(dlg->height - frame_h - cfg.dismiss_btn_margin_bottom);
-        *(short*)(upgrade_def + 0x18) = original_def_x;
-        *(short*)(upgrade_def + 0x1A) = (short)(target_y + (original_def_y - original_frame_y));
-        if (upgrade_frame) *(short*)(upgrade_frame + 0x18) = frame_x;
-        if (upgrade_frame) *(short*)(upgrade_frame + 0x1A) = target_y;
+        short target_y = (short)(dismiss_top - upgrade_gap - frame_h);
+        short target_def_y = (short)(target_y + (original_def_y - original_frame_y));
+        short def_w = *(unsigned short*)(upgrade_def + 0x1C);
+        *(short*)(upgrade_def + 0x18) = (short)(button_right - def_w);
+        *(short*)(upgrade_def + 0x1A) = target_def_y;
+        if (upgrade_frame) {
+            *(short*)(upgrade_frame + 0x18) = (short)(button_right - frame_w);
+            *(short*)(upgrade_frame + 0x1A) = target_y;
+        }
 
     }
 
