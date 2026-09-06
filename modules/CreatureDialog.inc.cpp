@@ -404,6 +404,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
     bool need_shift = false;
     bool need_upgrade_sync = false;
     const short upgrade_gap = 20;
+    const short upgrade_left_shift = 5;
+    const short upgrade_up_shift = 5;
     const short upgrade_frame_height_default = 34;
     const short button_right_default = 215 + 66;
     for (size_t i = 0; i < cnt; i++) {
@@ -413,9 +415,9 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
         if (id == 300 && *(void***)it == (void**)0x63BB54) {
             // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
-            short expected_x = (short)(button_right_default - *(unsigned short*)(it + 0x1C));
+            short expected_x = (short)(button_right_default - upgrade_left_shift - *(unsigned short*)(it + 0x1C));
             short expected_y = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom
-                - upgrade_gap - upgrade_frame_height_default + 1);
+                - upgrade_gap - upgrade_up_shift - upgrade_frame_height_default + 1);
             if (*(short*)(it + 0x18) != expected_x || *(short*)(it + 0x1A) != expected_y) {
                 need_upgrade_sync = true;
             }
@@ -535,8 +537,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
         if (upgrade_frame) {
             short candidate_w = *(unsigned short*)(upgrade_frame + 0x1C);
             short candidate_h = *(unsigned short*)(upgrade_frame + 0x1E);
-            short target_x = (short)(button_right - candidate_w);
-            short target_y = (short)(dismiss_top - upgrade_gap - candidate_h);
+            short target_x = (short)(button_right - upgrade_left_shift - candidate_w);
+            short target_y = (short)(dismiss_top - upgrade_gap - upgrade_up_shift - candidate_h);
             short candidate_x = *(short*)(upgrade_frame + 0x18);
             short candidate_y = *(short*)(upgrade_frame + 0x1A);
             bool old_position = (candidate_x == 74 && candidate_y == 236);
@@ -551,8 +553,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
                     || !IsSmallPcx8Frame(candidate)) continue;
                 short candidate_w = *(unsigned short*)(candidate + 0x1C);
                 short candidate_h = *(unsigned short*)(candidate + 0x1E);
-                short target_x = (short)(button_right - candidate_w);
-                short target_y = (short)(dismiss_top - upgrade_gap - candidate_h);
+                short target_x = (short)(button_right - upgrade_left_shift - candidate_w);
+                short target_y = (short)(dismiss_top - upgrade_gap - upgrade_up_shift - candidate_h);
                 if (small_frame_x[i] == target_x && small_frame_y[i] == target_y) {
                     upgrade_frame = candidate;
                     break;
@@ -570,7 +572,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
                 }
             }
         }
-        // 升级按钮底部位于解雇按钮顶部上方20px；金框和 DEF 命中区均右对齐解雇按钮。
+        // 升级按钮相对原目标再向左、向上各5px；金框和 DEF 命中区同步移动。
         // DEF 不改原版尺寸，只同步移动位置，保留原版事件分发和升级逻辑。
         const short original_frame_y = 236;
         const short original_def_y = 237;
@@ -580,13 +582,13 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
             frame_w = *(short*)(upgrade_frame + 0x1C);
             frame_h = *(short*)(upgrade_frame + 0x1E);
         }
-        short target_y = (short)(dismiss_top - upgrade_gap - frame_h);
+        short target_y = (short)(dismiss_top - upgrade_gap - upgrade_up_shift - frame_h);
         short target_def_y = (short)(target_y + (original_def_y - original_frame_y));
         short def_w = *(unsigned short*)(upgrade_def + 0x1C);
-        *(short*)(upgrade_def + 0x18) = (short)(button_right - def_w);
+        *(short*)(upgrade_def + 0x18) = (short)(button_right - upgrade_left_shift - def_w);
         *(short*)(upgrade_def + 0x1A) = target_def_y;
         if (upgrade_frame) {
-            *(short*)(upgrade_frame + 0x18) = (short)(button_right - frame_w);
+            *(short*)(upgrade_frame + 0x18) = (short)(button_right - upgrade_left_shift - frame_w);
             *(short*)(upgrade_frame + 0x1A) = target_y;
         }
 
