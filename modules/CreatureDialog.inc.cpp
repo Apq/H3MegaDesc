@@ -369,7 +369,7 @@ static int __stdcall Hook_DlgInitClampY(LoHook* /*h*/, HookContext* c)
 static char* s_last_adjusted_dlg = nullptr;
 
 // 对一个 298×window_height 生物信息窗口执行通用布局调整：元素下移 + 按钮替换 + 描述修正。
-static void AdjustCreatureInfoDlg(_Dlg_* dlg)
+static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
 {
     if (!dlg || dlg->width != 298 || dlg->height != cfg.window_height) return;
     if (!FindDlgItem(dlg, 200)) return;  // 不是生物信息窗口，跳过
@@ -566,7 +566,9 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
                         20 + cfg.desc_x_offset, cfg.desc_y + 6, cfg.text_width, cfg.text_height,
                         (char*)desc_text, (char*)"smalfont.fnt", 4, 3010, 0, 0);
                     if (desc) {
-                        reinterpret_cast<H3BaseDlg*>(dlg)->AddItem(reinterpret_cast<H3DlgItem*>(desc));
+                        // BUILD hook 在原版 LoadItem 循环之前；此处只登记，避免同一控件加载两次。
+                        // DefProc 兜底时窗口已初始化，新增控件仍需立即加载。
+                        reinterpret_cast<H3BaseDlg*>(dlg)->AddItem(reinterpret_cast<H3DlgItem*>(desc), defer_new_items ? FALSE : TRUE);
                         desc_item = (char*)desc;
                     }
                 }
@@ -624,21 +626,21 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->ebx;
-    AdjustCreatureInfoDlg(dlg);
+    AdjustCreatureInfoDlg(dlg, true);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildAdventure(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg);
+    AdjustCreatureInfoDlg(dlg, true);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg);
+    AdjustCreatureInfoDlg(dlg, true);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
