@@ -32,6 +32,20 @@ static char* FindDlgItem(_Dlg_* dlg, short target_id)
     return nullptr;
 }
 
+static bool IsCreatureDescriptionItem(char* item)
+{
+    if (!item) return false;
+    short id = *(short*)(item + 0x10);
+    unsigned short flags = *(unsigned short*)(item + 0x14);
+    void** vt = *(void***)item;
+    return id == -1 && (flags & 0x8)
+        && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
+        && *(unsigned short*)(item + 0x1C) >= 120
+        && *(unsigned short*)(item + 0x1C) <= 240
+        && *(short*)(item + 0x1A) >= 200
+        && *(short*)(item + 0x1A) <= 270;
+}
+
 static bool IsSmallPcx8Frame(char* item)
 {
     if (!item) return false;
@@ -369,7 +383,7 @@ static int __stdcall Hook_DlgInitClampY(LoHook* /*h*/, HookContext* c)
 static char* s_last_adjusted_dlg = nullptr;
 
 // 对一个 298×window_height 生物信息窗口执行通用布局调整：元素下移 + 按钮替换 + 描述修正。
-static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
+static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 {
     if (!dlg || dlg->width != 298 || dlg->height != cfg.window_height) return;
     if (!FindDlgItem(dlg, 200)) return;  // 不是生物信息窗口，跳过
@@ -390,7 +404,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
     char* spell_def   = nullptr;   // 魔法书 DEF 控件(id=30724)
     char* upgrade_frame = nullptr; // 升级按钮 PCX8 外框/底图控件(id=-1,小)
     char* upgrade_def   = nullptr; // 原版升级 DEF 控件(id=300，命令分发为动作13)
-    char* desc_item   = nullptr;   // 描述文字框：原版为 id=-1；补创建时使用独立 id=3010
     char* small_frames[8] = { 0 };
     short small_frame_x[8] = { 0 };
     short small_frame_y[8] = { 0 };
@@ -442,7 +455,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
 
         if (id == 200) old_bg = it;
 
-        bool is_minus1_text = (id == -1 && (flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8));
+        bool is_minus1_text = IsCreatureDescriptionItem(it);
 
     // 元素下移（只执行一次）：除背景200/名称203/状态栏224/描述文本外整体 +SHIFT
         if (need_shift && id != 200 && id != 203 && id != 224 && !is_minus1_text) *(short*)(it + 0x1A) = (short)(y + cfg.shift);
@@ -498,7 +511,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
                     *(unsigned short*)(it + 0x1C) = (unsigned short)cfg.text_width;
                 }
             }
-            desc_item = it;
         }
     }
 
@@ -579,35 +591,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
     }
 
 
-    // --- 描述文字：若原版未创建描述控件，则补创建一个独立文本控件 ---
-    // 注意：不要伪装成 id=-1，也不要直接调用底层 b_DlgStaticText_Create(flags=8)；
-    // 之前这样会在部分入口触发字体/文本渲染链路崩溃。
-    // 这里改用已验证稳定的 _DlgStaticText_::Create 包装函数。
-    if (need_shift && !desc_item && !FindDlgItem(dlg, 3010)) {
-        // 若原版没有可安全移动的描述控件，则在确认是生物窗口后补创建。
-        // 枯木战士也是生物；不能因为原版 id=-1 文本控件尺寸异常就排除。
-        // 约束：必须有数量文本 id=204 和正常 creature_id。
-        char* count_for_desc = FindDlgItem(dlg, 204);
-        int creature_id_for_desc = *(int*)((char*)dlg + 0x60);
-        if (count_for_desc && creature_id_for_desc >= 0 && creature_id_for_desc < 197) {
-            char* table = *(char**)0x6747B0;
-            if (table) {
-                const char* desc_text = *(const char**)(table + creature_id_for_desc * 0x74 + 0x1C);
-                if (desc_text && desc_text[0]) {
-                    H3DlgText* desc = H3DlgText::Create(
-                        20 + cfg.desc_x_offset, cfg.desc_y + 6, cfg.text_width, cfg.text_height,
-                        (char*)desc_text, (char*)"smalfont.fnt", 4, 3010, 0, 0);
-                    if (desc) {
-                        // BUILD hook 在原版 LoadItem 循环之前；此处只登记，避免同一控件加载两次。
-                        // DefProc 兜底时窗口已初始化，新增控件仍需立即加载。
-                        reinterpret_cast<H3BaseDlg*>(dlg)->AddItem(reinterpret_cast<H3DlgItem*>(desc), defer_new_items ? FALSE : TRUE);
-                        desc_item = (char*)desc;
-                    }
-                }
-            }
-        }
-    }
-
     // --- 背景：把 24-bit PCX 量化到原游戏调色板后，替换旧背景控件(id=200)内部的 _Pcx8_*。
     // 首次加载后缓存 s_bg_pcx8；后续只做指针替换（dlg 换了但 old_bg 仍是 id=200 控件）。
     if (!s_bg_pcx8 && old_bg) {
@@ -659,21 +642,21 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->ebx;
-    AdjustCreatureInfoDlg(dlg, true);
+    AdjustCreatureInfoDlg(dlg);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildAdventure(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg, true);
+    AdjustCreatureInfoDlg(dlg);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg, true);
+    AdjustCreatureInfoDlg(dlg);
     TryAddFightValueLine(dlg);
     return EXEC_DEFAULT;
 }
