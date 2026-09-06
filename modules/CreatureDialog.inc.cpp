@@ -32,6 +32,37 @@ static char* FindDlgItem(_Dlg_* dlg, short target_id)
     return nullptr;
 }
 
+static bool IsSmallPcx8Frame(char* item)
+{
+    if (!item) return false;
+    return *(short*)(item + 0x10) == -1
+        && *(unsigned short*)(item + 0x1E) < 100
+        && *(void***)item == (void**)0x63BA94;
+}
+
+static char* FindNearestSmallFrame(char** frames, const short* xs, const short* ys, int count,
+    short target_x, short target_y, char* excluded_a, char* excluded_b)
+{
+    if (target_x == -32768 || target_y == -32768) return nullptr;
+    char* best = nullptr;
+    int best_score = 0x7fffffff;
+    for (int i = 0; i < count; i++) {
+        char* frame = frames[i];
+        if (!frame || frame == excluded_a || frame == excluded_b) continue;
+        if (!IsSmallPcx8Frame(frame)) continue;
+        int dx = (int)xs[i] - (int)target_x;
+        int dy = (int)ys[i] - (int)target_y;
+        if (dx < 0) dx = -dx;
+        if (dy < 0) dy = -dy;
+        int score = dx + dy;
+        if (score < best_score) {
+            best_score = score;
+            best = frame;
+        }
+    }
+    return best;
+}
+
 static void WriteWideFileUtf8BomIfEmpty(HANDLE h)
 {
     LARGE_INTEGER pos;
@@ -357,24 +388,34 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     char* dismiss_def   = nullptr; // 解雇 DEF 控件(id=30723)
     char* spell_frame = nullptr;   // 魔法书按钮 PCX8 外框/底图控件(id=-1,小)
     char* spell_def   = nullptr;   // 魔法书 DEF 控件(id=30724)
+    char* upgrade_frame = nullptr; // 升级按钮 PCX8 外框/底图控件(id=-1,小)
+    char* upgrade_def   = nullptr; // 原版升级 DEF 控件(id=300，命令分发为动作13)
     char* desc_item   = nullptr;   // 描述文字框：原版为 id=-1；补创建时使用独立 id=3010
-    int   minus1_small  = 0;       // id=-1 且 ih<100 的控件计数（区分解雇金框和魔法书金框）
     char* small_frames[8] = { 0 };
     short small_frame_x[8] = { 0 };
     short small_frame_y[8] = { 0 };
     int small_frame_count = 0;
+    short dismiss_def_old_x = -32768;
+    short dismiss_def_old_y = -32768;
     short spell_def_old_x = -32768;
     short spell_def_old_y = -32768;
 
     // 多个 dlg 指针可能交替出现（如右键快速点击），不能靠 s_adjusted 指针比较判断。
     bool need_shift = false;
+    bool need_upgrade_sync = false;
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
         if (!it) continue;
         short id = *(short*)(it + 0x10);
-        if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) { need_shift = true; break; }
+        if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
+        if (id == 300
+            && (*(short*)(it + 0x18) != 75
+                || *(short*)(it + 0x1A) != (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom))) {
+            // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
+            need_upgrade_sync = true;
+        }
     }
-    if (!need_shift) return;
+    if (!need_shift && !need_upgrade_sync) return;
 
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
@@ -385,7 +426,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         void** vt = *(void***)it;
         short y = *(short*)(it + 0x1A);
 
-        // 先记录所有 id=-1 小金框的原始位置，后面用 DEF 原始坐标匹配真正的魔法书金框。
+        // 先记录所有 id=-1 小金框的原始位置，后面按对应 DEF 原始坐标匹配。
         if (id == -1 && ih < 100 && small_frame_count < 8) {
             small_frames[small_frame_count] = it;
             small_frame_x[small_frame_count] = *(short*)(it + 0x18);
@@ -410,6 +451,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             ok_def = it;
         } else if (id == 30723) {
             // 解雇 DEF 本体：与魔法书共用上方按钮位置。
+            dismiss_def_old_x = *(short*)(it + 0x18);
+            dismiss_def_old_y = y;
             *(short*)(it + 0x18) = 215;
             *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
@@ -420,30 +463,18 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             // 与解雇按钮共用上方按钮位置；后续仅保留点击命中。
             // 先记录原始位置，用于在 id=-1 小控件里匹配真正的魔法书金框。
             spell_def_old_x = *(short*)(it + 0x18);
-            spell_def_old_y = *(short*)(it + 0x1A);
+            spell_def_old_y = y;
             *(short*)(it + 0x18) = 215;
             *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             spell_def = it;
-        } else if (id == -1 && (has_dismiss || has_spell) && ih < 100 && vt == (void**)0x63BA94) {
-            // id=-1 小控件：按钮金框，必须是 PCX8 静态控件(vt=0x63BA94)。
-            // 紫龙左键的原版描述也是 id=-1 且 h=41，但它是文本控件，不能被这里误判成按钮金框。
-            // 可能只有解雇、只有魔法书，或两者都有；不能要求 has_dismiss 才进入。
-            if (has_dismiss && minus1_small == 0) {
-                *(short*)(it + 0x18) = 215;
-                *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
-                *(unsigned short*)(it + 0x1C) = 66;
-                *(unsigned short*)(it + 0x1E) = 32;
-                dismiss_frame = it;
-            } else if (has_spell && ((has_dismiss && minus1_small == 1) || (!has_dismiss && minus1_small == 0))) {
-                *(short*)(it + 0x18) = 215;
-                *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
-                *(unsigned short*)(it + 0x1C) = 66;
-                *(unsigned short*)(it + 0x1E) = 32;
-                spell_frame = it;
-            }
-            minus1_small++;
+        } else if (id == 300) {
+            // 原版升级 DEF 的 item id 是 300；动作 13 由原版事件分发器映射，不能把 13 当 item id。
+            // 只记录原版 item；稍后按已确认的 Box46x32.pcx / iViewCr.def 相对坐标移动。
+            upgrade_def = it;
+        } else if (id == -1 && ih < 100 && vt == (void**)0x63BA94) {
+            // id=-1 小控件：按钮金框，先只收集，不再按出现顺序猜解雇/魔法书/升级归属。
         } else if (id == -1 && (flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
             && *(unsigned short*)(it + 0x1C) >= 120 && *(unsigned short*)(it + 0x1C) <= 240
             && *(short*)(it + 0x1A) >= 200 && *(short*)(it + 0x1A) <= 270) {
@@ -465,28 +496,54 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         }
     }
 
-    // 魔法书金框不能靠"第几个 id=-1 小控件"猜；紫龙左键场景只有魔法书没有解雇时顺序会变。
-    // 用魔法书 DEF 原始坐标匹配最近的 id=-1 小金框，再统一移动到右侧按钮列。
-    if (has_spell && spell_def && spell_def_old_x != -32768) {
-        char* best = nullptr;
-        int best_score = 0x7fffffff;
-        for (int i = 0; i < small_frame_count; i++) {
-            char* it = small_frames[i];
-            if (!it || it == dismiss_frame) continue;
-            int dx = (int)small_frame_x[i] - (int)spell_def_old_x;
-            int dy = (int)small_frame_y[i] - (int)spell_def_old_y;
-            if (dx < 0) dx = -dx;
-            if (dy < 0) dy = -dy;
-            int score = dx + dy;
-            if (score < best_score) { best_score = score; best = it; }
+    // 通过原版 DEF 的原始坐标匹配各自的金框，避免升级框被按出现顺序误认成解雇框。
+    if (has_dismiss && dismiss_def) {
+        dismiss_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
+            dismiss_def_old_x, dismiss_def_old_y, nullptr, nullptr);
+        if (dismiss_frame) {
+            *(short*)(dismiss_frame + 0x18) = 215;
+            *(short*)(dismiss_frame + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(unsigned short*)(dismiss_frame + 0x1C) = 66;
+            *(unsigned short*)(dismiss_frame + 0x1E) = 32;
         }
-        if (best) {
-            *(short*)(best + 0x18) = 215;
-            *(short*)(best + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
-            *(unsigned short*)(best + 0x1C) = 66;
-            *(unsigned short*)(best + 0x1E) = 32;
-            spell_frame = best;
+    }
+    if (has_spell && spell_def) {
+        spell_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
+            spell_def_old_x, spell_def_old_y, dismiss_frame, nullptr);
+        if (spell_frame) {
+            *(short*)(spell_frame + 0x18) = 215;
+            *(short*)(spell_frame + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(unsigned short*)(spell_frame + 0x1C) = 66;
+            *(unsigned short*)(spell_frame + 0x1E) = 32;
         }
+    }
+    if (upgrade_def) {
+        upgrade_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
+            75, 237, dismiss_frame, spell_frame);
+        // 原版升级组固定为 Box46x32(x=74,y=236) + iViewCr.def(x=75,y=237)。
+        // DEF 始终按这个已确认的 1px 相对偏移移动；不能因为金框未枚举到而留下旧命中区，
+        // 也不能把已经移动过的坐标再次当作原始坐标，导致 DefProc 重扫时越移越远。
+        const short original_frame_x = 74;
+        const short original_frame_y = 236;
+        const short original_def_x = 75;
+        const short original_def_y = 237;
+        short frame_x = original_frame_x;
+        short frame_h = 34;
+        if (upgrade_frame) {
+            for (int i = 0; i < small_frame_count; i++) {
+                if (small_frames[i] == upgrade_frame) {
+                    frame_x = small_frame_x[i];
+                    break;
+                }
+            }
+            frame_h = *(short*)(upgrade_frame + 0x1E);
+        }
+        short target_y = (short)(dlg->height - frame_h - cfg.dismiss_btn_margin_bottom);
+        *(short*)(upgrade_def + 0x18) = original_def_x;
+        *(short*)(upgrade_def + 0x1A) = (short)(target_y + (original_def_y - original_frame_y));
+        if (upgrade_frame) *(short*)(upgrade_frame + 0x18) = frame_x;
+        if (upgrade_frame) *(short*)(upgrade_frame + 0x1A) = target_y;
+
     }
 
 
@@ -610,6 +667,8 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
                     *(void***)ds_def = s_dismiss_def_novtbl;
                 }
             }
+            // 升级 DEF 可能在 BUILD hook 后才加入；再次扫描只做位置同步，原版事件链不变。
+            AdjustCreatureInfoDlg(dlg);
         } else {
             AdjustCreatureInfoDlg(dlg);
             s_last_adjusted_dlg = (char*)dlg;
