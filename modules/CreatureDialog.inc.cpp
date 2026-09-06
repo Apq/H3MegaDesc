@@ -32,14 +32,6 @@ static char* FindDlgItem(_Dlg_* dlg, short target_id)
     return nullptr;
 }
 
-static bool IsSmallPcx8Frame(char* item)
-{
-    if (!item) return false;
-    return *(short*)(item + 0x10) == -1
-        && *(unsigned short*)(item + 0x1E) < 100
-        && *(void***)item == (void**)0x63BA94;
-}
-
 static char* FindNearestSmallFrame(char** frames, const short* xs, const short* ys, int count,
     short target_x, short target_y, char* excluded_a, char* excluded_b)
 {
@@ -49,7 +41,6 @@ static char* FindNearestSmallFrame(char** frames, const short* xs, const short* 
     for (int i = 0; i < count; i++) {
         char* frame = frames[i];
         if (!frame || frame == excluded_a || frame == excluded_b) continue;
-        if (!IsSmallPcx8Frame(frame)) continue;
         int dx = (int)xs[i] - (int)target_x;
         int dy = (int)ys[i] - (int)target_y;
         if (dx < 0) dx = -dx;
@@ -388,8 +379,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     char* dismiss_def   = nullptr; // 解雇 DEF 控件(id=30723)
     char* spell_frame = nullptr;   // 魔法书按钮 PCX8 外框/底图控件(id=-1,小)
     char* spell_def   = nullptr;   // 魔法书 DEF 控件(id=30724)
-    char* upgrade_frame = nullptr; // 升级按钮 PCX8 外框/底图控件(id=-1,小)
-    char* upgrade_def   = nullptr; // 原版升级 DEF 控件(id=300，命令分发为动作13)
     char* desc_item   = nullptr;   // 描述文字框：原版为 id=-1；补创建时使用独立 id=3010
     char* small_frames[8] = { 0 };
     short small_frame_x[8] = { 0 };
@@ -402,20 +391,13 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 
     // 多个 dlg 指针可能交替出现（如右键快速点击），不能靠 s_adjusted 指针比较判断。
     bool need_shift = false;
-    bool need_upgrade_sync = false;
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
         if (!it) continue;
         short id = *(short*)(it + 0x10);
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
-        if (id == 300 && *(void***)it == (void**)0x63BB54
-            && (*(short*)(it + 0x18) != 75
-                || *(short*)(it + 0x1A) != (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom))) {
-            // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
-            need_upgrade_sync = true;
-        }
     }
-    if (!need_shift && !need_upgrade_sync) return;
+    if (!need_shift) return;
 
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
@@ -469,10 +451,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             spell_def = it;
-        } else if (id == 300 && vt == (void**)0x63BB54) {
-            // 原版升级 DEF 的 item id 是 300；动作 13 由原版事件分发器映射，不能把 13 当 item id。
-            // 只记录原版 item；稍后按已确认的 Box46x32.pcx / iViewCr.def 相对坐标移动。
-            upgrade_def = it;
         } else if (id == -1 && ih < 100 && vt == (void**)0x63BA94) {
             // id=-1 小控件：按钮金框，先只收集，不再按出现顺序猜解雇/魔法书/升级归属。
         } else if (id == -1 && (flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
@@ -517,36 +495,6 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             *(unsigned short*)(spell_frame + 0x1E) = 32;
         }
     }
-    if (upgrade_def) {
-        upgrade_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
-            75, 237, dismiss_frame, spell_frame);
-        // 原版升级组固定为 Box46x32(x=74,y=236) + iViewCr.def(x=75,y=237)。
-        // DEF 始终按这个已确认的 1px 相对偏移移动；不能因为金框未枚举到而留下旧命中区，
-        // 也不能把已经移动过的坐标再次当作原始坐标，导致 DefProc 重扫时越移越远。
-        const short original_frame_x = 74;
-        const short original_frame_y = 236;
-        const short original_def_x = 75;
-        const short original_def_y = 237;
-        short frame_x = original_frame_x;
-        short frame_h = 34;
-        if (upgrade_frame) {
-            for (int i = 0; i < small_frame_count; i++) {
-                if (small_frames[i] == upgrade_frame) {
-                    frame_x = small_frame_x[i];
-                    break;
-                }
-            }
-            frame_h = *(short*)(upgrade_frame + 0x1E);
-        }
-        short target_y = (short)(dlg->height - frame_h - cfg.dismiss_btn_margin_bottom);
-        *(short*)(upgrade_def + 0x18) = original_def_x;
-        *(short*)(upgrade_def + 0x1A) = (short)(target_y + (original_def_y - original_frame_y));
-        if (upgrade_frame) *(short*)(upgrade_frame + 0x18) = frame_x;
-        if (upgrade_frame) *(short*)(upgrade_frame + 0x1A) = target_y;
-
-    }
-
-
     // --- 描述文字：若原版未创建描述控件，则补创建一个独立文本控件 ---
     // 注意：不要伪装成 id=-1，也不要直接调用底层 b_DlgStaticText_Create(flags=8)；
     // 之前这样会在部分入口触发字体/文本渲染链路崩溃。
