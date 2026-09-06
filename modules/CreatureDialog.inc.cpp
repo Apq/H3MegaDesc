@@ -408,7 +408,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         if (!it) continue;
         short id = *(short*)(it + 0x10);
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
-        if (id == 300
+        if (id == 300 && *(void***)it == (void**)0x63BB54
             && (*(short*)(it + 0x18) != 75
                 || *(short*)(it + 0x1A) != (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom))) {
             // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
@@ -469,7 +469,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             spell_def = it;
-        } else if (id == 300) {
+        } else if (id == 300 && vt == (void**)0x63BB54) {
             // 原版升级 DEF 的 item id 是 300；动作 13 由原版事件分发器映射，不能把 13 当 item id。
             // 只记录原版 item；稍后按已确认的 Box46x32.pcx / iViewCr.def 相对坐标移动。
             upgrade_def = it;
@@ -667,8 +667,6 @@ int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
                     *(void***)ds_def = s_dismiss_def_novtbl;
                 }
             }
-            // 升级 DEF 可能在 BUILD hook 后才加入；再次扫描只做位置同步，原版事件链不变。
-            AdjustCreatureInfoDlg(dlg);
         } else {
             AdjustCreatureInfoDlg(dlg);
             s_last_adjusted_dlg = (char*)dlg;
