@@ -325,14 +325,14 @@ static void PatchCreatureDlgYParam(HookContext* c, int y_offset)
     }
 }
 
-// 冒险/城镇构造函数：0041AFA0 前参数为 [ebp+0C]=x, [ebp+10]=y。
+// 战斗/城镇构造函数：0041AFA0 前参数为 [ebp+0C]=x, [ebp+10]=y。
 static int __stdcall Hook_CreatureDlgY_Ebp10(LoHook* /*h*/, HookContext* c)
 {
     PatchCreatureDlgYParam(c, 0x10);
     return EXEC_DEFAULT;
 }
 
-// 战斗构造函数：0041AFA0 前参数为 [ebp+18]=x, [ebp+1C]=y。
+// 英雄部队构造函数：0041AFA0 前参数为 [ebp+18]=x, [ebp+1C]=y。
 static int __stdcall Hook_CreatureDlgY_Ebp1C(LoHook* /*h*/, HookContext* c)
 {
     PatchCreatureDlgYParam(c, 0x1C);
@@ -622,7 +622,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg, bool defer_new_items = false)
 }
 
 // BUILD-phase hooks：在窗口构建期（显示前）执行调整，hold/release 两种模式都覆盖。
-// 各界面最后一个 AddItemToOwnArrayList 之后的寄存器语境：战斗 ebx=dlg；冒险 esi=dlg；城镇 esi=dlg。
+// 历史函数名的 Combat/Adventure 与实际入口相反，保留名称及绑定避免改动执行链。
+// 0x5F4503=英雄部队(ebx)，0x5F3E75=战斗(esi)，0x5F491E=城镇(esi)；均在 LoadItem 循环前。
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
     _Dlg_* dlg = (_Dlg_*)c->ebx;

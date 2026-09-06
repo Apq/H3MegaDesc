@@ -26,21 +26,21 @@ static void StartPlugin()
         WriteLog("右键魔法描述框滚轮翻页补丁已关闭。");
     }
 
-    // BUILD 阶段 hook
-    _PI->WriteLoHook(0x5F4503, Hook_BuildCombat);
-    _PI->WriteLoHook(0x5F3E75, Hook_BuildAdventure);
+    // BUILD 阶段 hook；Combat/Adventure 为历史名称，实际入口以地址注释为准。
+    _PI->WriteLoHook(0x5F4503, Hook_BuildCombat);    // 英雄部队，ebx=dlg
+    _PI->WriteLoHook(0x5F3E75, Hook_BuildAdventure); // 战斗，esi=dlg
     _PI->WriteLoHook(0x5F491E, Hook_BuildTown);
 
     // 窗口构造期 Y 吸附：修正窗口 y，避免描述绘制越屏。
     // 底层 0x41AFA0 覆盖所有路径（包括右键临时窗口等）；上层三处覆盖各构造函数入口。
     _PI->WriteLoHook(0x41AFA0, Hook_DlgInitClampY);      // _Dlg_ 初始化统一入口
-    _PI->WriteLoHook(0x5F3721, Hook_CreatureDlgY_Ebp10); // 冒险构造：y=[ebp+10]
+    _PI->WriteLoHook(0x5F3721, Hook_CreatureDlgY_Ebp10); // 战斗构造：y=[ebp+10]
     _PI->WriteLoHook(0x5F45D1, Hook_CreatureDlgY_Ebp10); // 城镇构造：y=[ebp+10]
-    _PI->WriteLoHook(0x5F3F14, Hook_CreatureDlgY_Ebp1C); // 战斗构造：y=[ebp+1C]
+    _PI->WriteLoHook(0x5F3F14, Hook_CreatureDlgY_Ebp1C); // 英雄部队构造：y=[ebp+1C]
 
     // 描述控件 _DlgStaticText_::Create 调用前改写参数栈，支持 TextHeight > 127。
-    _PI->WriteLoHook(0x5F447F, Hook_DescTextCreateParams); // 战斗描述文本 create call
-    _PI->WriteLoHook(0x5F3E54, Hook_DescTextCreateParams); // 冒险描述文本 create call
+    _PI->WriteLoHook(0x5F447F, Hook_DescTextCreateParams); // 英雄部队描述文本 create call
+    _PI->WriteLoHook(0x5F3E54, Hook_DescTextCreateParams); // 战斗描述文本 create call
     _PI->WriteLoHook(0x5F489A, Hook_DescTextCreateParams); // 城镇描述文本 create call
 
     WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgDefProc(0x41B120), DlgInitY(0x41AFA0+3), DescTextCreate(3)；滚轮/颜色补丁按 Features 配置。");
