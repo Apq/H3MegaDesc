@@ -9,8 +9,12 @@ static struct Config {
     bool  enable_text_color_fix;      // 启用滚动文本跨行颜色补丁，默认关闭。
     // 布局参数（从 INI 读取，方便调整）
     int   shift;            // 元素下移量（默认13）
-    int   btn_margin_bottom;// 确认按钮距窗口底部偏移（原硬编码40）
-    int   dismiss_btn_margin_bottom;  // 解雇/魔法书按钮共用的上方位置距窗口底部偏移（默认90）
+    int   confirm_btn_margin_left;    // 确认按钮金框左上角距窗口左侧（默认215）
+    int   confirm_btn_margin_bottom;  // 确认按钮金框左上角距窗口底部（默认72）
+    int   dismiss_btn_margin_left;    // 解雇按钮金框左上角距窗口左侧（默认215）
+    int   dismiss_btn_margin_bottom;  // 解雇按钮金框左上角距窗口底部（默认122）
+    int   spell_btn_margin_left;      // 魔法书按钮金框左上角距窗口左侧（默认215）
+    int   spell_btn_margin_bottom;    // 魔法书按钮金框左上角距窗口底部（默认122）
     int   desc_y;           // 描述文字框 Y 坐标（原硬编码232+SHIFT=248）
     int   text_height;      // 描述文本区高度（默认105，适配298×383底图）
     int   text_width;       // 描述文本区宽度（exe patch 值，原0xC8=200）
@@ -246,8 +250,12 @@ static void ReadConfig()
     cfg.enable_text_color_fix      = GetPrivateProfileIntA("Features", "EnableTextColorFix",      0, f) != 0;
     // 布局参数
     cfg.shift                  = GetPrivateProfileIntA("Layout", "Shift",             13,  f);
-    cfg.btn_margin_bottom      = GetPrivateProfileIntA("Layout", "BtnMarginBottom",   40,  f);
-    cfg.dismiss_btn_margin_bottom = GetPrivateProfileIntA("Layout", "DismissBtnMarginBottom", 90, f);
+    cfg.confirm_btn_margin_left   = GetPrivateProfileIntA("Layout", "ConfirmBtnMarginLeft",   215, f);
+    cfg.confirm_btn_margin_bottom = GetPrivateProfileIntA("Layout", "ConfirmBtnMarginBottom",  72, f);
+    cfg.dismiss_btn_margin_left   = GetPrivateProfileIntA("Layout", "DismissBtnMarginLeft",   215, f);
+    cfg.dismiss_btn_margin_bottom = GetPrivateProfileIntA("Layout", "DismissBtnMarginBottom", 122, f);
+    cfg.spell_btn_margin_left     = GetPrivateProfileIntA("Layout", "SpellBtnMarginLeft",     215, f);
+    cfg.spell_btn_margin_bottom   = GetPrivateProfileIntA("Layout", "SpellBtnMarginBottom",   122, f);
     cfg.desc_y                 = GetPrivateProfileIntA("Layout", "DescY",             248, f);
     cfg.text_height            = GetPrivateProfileIntA("Layout", "TextHeight",        105, f);
     cfg.text_width             = GetPrivateProfileIntA("Layout", "TextWidth",         200, f);
@@ -259,6 +267,18 @@ static void ReadConfig()
     cfg.upgrade_btn_margin_bottom = GetPrivateProfileIntA("Layout", "UpgradeBtnMarginBottom", 181, f);
     if (cfg.fight_value_y_offset < -40) cfg.fight_value_y_offset = -40;
     if (cfg.fight_value_y_offset > 80) cfg.fight_value_y_offset = 80;
+    if (cfg.confirm_btn_margin_left < 0) cfg.confirm_btn_margin_left = 0;
+    if (cfg.confirm_btn_margin_left > 298) cfg.confirm_btn_margin_left = 298;
+    if (cfg.confirm_btn_margin_bottom < 0) cfg.confirm_btn_margin_bottom = 0;
+    if (cfg.confirm_btn_margin_bottom > cfg.window_height) cfg.confirm_btn_margin_bottom = cfg.window_height;
+    if (cfg.dismiss_btn_margin_left < 0) cfg.dismiss_btn_margin_left = 0;
+    if (cfg.dismiss_btn_margin_left > 298) cfg.dismiss_btn_margin_left = 298;
+    if (cfg.dismiss_btn_margin_bottom < 0) cfg.dismiss_btn_margin_bottom = 0;
+    if (cfg.dismiss_btn_margin_bottom > cfg.window_height) cfg.dismiss_btn_margin_bottom = cfg.window_height;
+    if (cfg.spell_btn_margin_left < 0) cfg.spell_btn_margin_left = 0;
+    if (cfg.spell_btn_margin_left > 298) cfg.spell_btn_margin_left = 298;
+    if (cfg.spell_btn_margin_bottom < 0) cfg.spell_btn_margin_bottom = 0;
+    if (cfg.spell_btn_margin_bottom > cfg.window_height) cfg.spell_btn_margin_bottom = cfg.window_height;
     if (cfg.upgrade_btn_margin_left < 0) cfg.upgrade_btn_margin_left = 0;
     if (cfg.upgrade_btn_margin_left > 298) cfg.upgrade_btn_margin_left = 298;
     if (cfg.upgrade_btn_margin_bottom < 0) cfg.upgrade_btn_margin_bottom = 0;

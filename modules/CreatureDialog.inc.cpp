@@ -209,19 +209,20 @@ static int ButtonStateFromDef(char* def_item)
     return 0;
 }
 
-static void UpdatePcx8ButtonFromDef(char* frame_item, char* def_item, _Pcx8_** states, int margin_bottom, _Dlg_* dlg, void** novtbl, ButtonVisualBinding* binding)
+static void UpdatePcx8ButtonFromDef(char* frame_item, char* def_item, _Pcx8_** states,
+    int margin_left, int margin_bottom, _Dlg_* dlg, void** novtbl, ButtonVisualBinding* binding)
 {
     if (!frame_item || !states || !states[0] || !dlg) return;
     int st = ButtonStateFromDef(def_item);
     if (!states[st]) st = 0;
     _Pcx8_* img = states[st];
 
-    // 统一固定到右侧按钮列。不要再根据外框旧 X 推算；
-    // 紫龙魔法书场景里旧外框可能仍在左侧，会把新按钮也推回左侧。
+    // 直接使用调用方传入的金框左上角绝对边距；不再根据旧外框位置推算。
+    // 因此解雇和魔法书可以分别配置，紫龙场景也不会把按钮位置带回旧坐标。
     short new_w = (short)img->width;
     short new_h = (short)img->height;
-    short new_x = (short)(281 - new_w); // 右边缘对齐原确认按钮右边界 x=215,w=66 → 281
-    short new_y = (short)(dlg->height - new_h - margin_bottom);
+    short new_x = (short)margin_left;
+    short new_y = (short)(dlg->height - margin_bottom);
 
     *(short*)(frame_item + 0x18) = new_x;
     *(short*)(frame_item + 0x1A) = new_y;
@@ -415,6 +416,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 
     // 多个 dlg 指针可能交替出现（如右键快速点击），不能靠 s_adjusted 指针比较判断。
     bool need_shift = false;
+    bool need_button_sync = false;
     bool need_upgrade_sync = false;
     const short upgrade_margin_left = (short)cfg.upgrade_btn_margin_left;
     const short upgrade_margin_bottom = (short)cfg.upgrade_btn_margin_bottom;
@@ -425,6 +427,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         if (!it) continue;
         short id = *(short*)(it + 0x10);
         if ((id == 201 || id == 202) && *(short*)(it + 0x1A) < 60) need_shift = true;
+        if (id == 225 || id == 30722 || id == 30723 || id == 30724 || id == 301)
+            need_button_sync = true;
         if (id == 300 && *(void***)it == (void**)0x63BB54) {
             // 升级 DEF 可能在 BUILD hook 之后才加入 item vector；不能因主体布局已完成而漏掉它。
             short expected_x = (short)(upgrade_margin_left + upgrade_def_offset_x);
@@ -434,7 +438,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             }
         }
     }
-    if (!need_shift && !need_upgrade_sync) return;
+    if (!need_shift && !need_button_sync && !need_upgrade_sync) return;
 
     for (size_t i = 0; i < cnt; i++) {
         char* it = data[i];
@@ -460,31 +464,33 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     // 元素下移（只执行一次）：除背景200/名称203/状态栏224/描述文本外整体 +SHIFT
         if (need_shift && id != 200 && id != 203 && id != 224 && !is_minus1_text) *(short*)(it + 0x1A) = (short)(y + cfg.shift);
 
-        // 确认按钮外框(66×32)：贴窗口底，距底 cfg.btn_margin_bottom。
+        // 三类按钮都按金框左上角绝对坐标定位；DEF 命中区同步跟随。
         if (id == 225) {
-            *(short*)(it + 0x1A) = (short)(dlg->height - ih - cfg.btn_margin_bottom);
+            *(short*)(it + 0x18) = (short)cfg.confirm_btn_margin_left;
+            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.confirm_btn_margin_bottom);
             ok_frame = it;
         } else if (id == 30722) {
             // 确认按钮 DEF 本体：后续仅保留点击命中，绘制由 PCX8 外框控件承担。
-            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.btn_margin_bottom);
+            *(short*)(it + 0x18) = (short)cfg.confirm_btn_margin_left;
+            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.confirm_btn_margin_bottom);
             ok_def = it;
         } else if (id == 30723) {
-            // 解雇 DEF 本体：与魔法书共用上方按钮位置。
+            // 解雇 DEF 本体：使用独立的解雇按钮位置配置。
             dismiss_def_old_x = *(short*)(it + 0x18);
             dismiss_def_old_y = y;
-            *(short*)(it + 0x18) = 215;
-            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(short*)(it + 0x18) = (short)cfg.dismiss_btn_margin_left;
+            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             dismiss_def = it;
         } else if (id == 30724 || id == 301) {
             // 魔法书/施法 DEF 本体：id=30724 是部分场景，id=301 是战场左键己方紫龙。
-            // 与解雇按钮共用上方按钮位置；后续仅保留点击命中。
+            // 使用独立的魔法书按钮位置配置，后续仅保留点击命中。
             // 先记录原始位置，用于在 id=-1 小控件里匹配真正的魔法书金框。
             spell_def_old_x = *(short*)(it + 0x18);
             spell_def_old_y = y;
-            *(short*)(it + 0x18) = 215;
-            *(short*)(it + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(short*)(it + 0x18) = (short)cfg.spell_btn_margin_left;
+            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.spell_btn_margin_bottom);
             *(unsigned short*)(it + 0x1C) = 66;
             *(unsigned short*)(it + 0x1E) = 32;
             spell_def = it;
@@ -519,8 +525,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         dismiss_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
             dismiss_def_old_x, dismiss_def_old_y, nullptr, nullptr);
         if (dismiss_frame) {
-            *(short*)(dismiss_frame + 0x18) = 215;
-            *(short*)(dismiss_frame + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(short*)(dismiss_frame + 0x18) = (short)cfg.dismiss_btn_margin_left;
+            *(short*)(dismiss_frame + 0x1A) = (short)(dlg->height - cfg.dismiss_btn_margin_bottom);
             *(unsigned short*)(dismiss_frame + 0x1C) = 66;
             *(unsigned short*)(dismiss_frame + 0x1E) = 32;
         }
@@ -529,8 +535,8 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         spell_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
             spell_def_old_x, spell_def_old_y, dismiss_frame, nullptr);
         if (spell_frame) {
-            *(short*)(spell_frame + 0x18) = 215;
-            *(short*)(spell_frame + 0x1A) = (short)(dlg->height - 32 - cfg.dismiss_btn_margin_bottom);
+            *(short*)(spell_frame + 0x18) = (short)cfg.spell_btn_margin_left;
+            *(short*)(spell_frame + 0x1A) = (short)(dlg->height - cfg.spell_btn_margin_bottom);
             *(unsigned short*)(spell_frame + 0x1C) = 66;
             *(unsigned short*)(spell_frame + 0x1E) = 32;
         }
@@ -623,13 +629,16 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         }
     }
     if (dismiss_frame && s_ds_btn[0]) {
-        UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
+        UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn,
+            cfg.dismiss_btn_margin_left, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
     }
     if (spell_frame && s_sp_btn[0]) {
-        UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
+        UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn,
+            cfg.spell_btn_margin_left, cfg.spell_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
     }
     if (ok_frame && s_ok_btn[0]) {
-        UpdatePcx8ButtonFromDef(ok_frame, ok_def, s_ok_btn, cfg.btn_margin_bottom, dlg, (void**)s_ok_def_novtbl, &s_ok_binding);
+        UpdatePcx8ButtonFromDef(ok_frame, ok_def, s_ok_btn,
+            cfg.confirm_btn_margin_left, cfg.confirm_btn_margin_bottom, dlg, (void**)s_ok_def_novtbl, &s_ok_binding);
     }
 
     // 注意：不在 BUILD 阶段直接修改 dlg->x/y。窗口位置由 Hook_DlgInitClampY 统一处理。

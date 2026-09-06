@@ -71,8 +71,12 @@ pcx/              - 背景和按钮 PCX 素材目录
 [Layout]
 WindowHeight=383           ; 目标窗口高度，默认 383
 FightValueYOffset=19       ; 战斗价值行相对名称行的 Y 偏移
-BtnMarginBottom=40         ; 确认按钮距底边距，默认 40
-DismissBtnMarginBottom=90  ; 解雇/魔法书共用的上方按钮位置，默认 90
+ConfirmBtnMarginLeft=215      ; 确认按钮金框左上角距窗口左侧，默认 215
+ConfirmBtnMarginBottom=72     ; 确认按钮金框左上角距窗口底部，默认 72
+DismissBtnMarginLeft=215      ; 解雇按钮金框左上角距窗口左侧，默认 215
+DismissBtnMarginBottom=122    ; 解雇按钮金框左上角距窗口底部，默认 122
+SpellBtnMarginLeft=215        ; 魔法书按钮金框左上角距窗口左侧，默认 215
+SpellBtnMarginBottom=122      ; 魔法书按钮金框左上角距窗口底部，默认 122
 UpgradeBtnMarginLeft=230   ; 升级按钮金框左上角距对话框左侧，默认 230
 UpgradeBtnMarginBottom=181 ; 升级按钮金框左上角距对话框底部，默认 181
 
