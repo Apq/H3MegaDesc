@@ -40,10 +40,16 @@ static void ApplyCreatureBoxPatches()
     _PI->WriteHexPatch(0x5F488C, tw_hex);           // 城镇 宽度
     _PI->WriteHexPatch(0x5F4891, ty_hex);           // 城镇 Y
 
-    // 战斗构造函数：法术生物（紫龙）原版在创建法术面板后跳过描述创建（EB 6A → jmp 0x5F44A0）。
-    // 改为 EB 05 → jmp 0x5F443B，落入描述文本检查/创建分支，使紫龙也走原版描述创建路径。
-    // Hook_DescTextCreateParams（挂在 0x5F447F 的 call 前）统一改写参数，所有生物一视同仁。
+    // 英雄部队构造（0x5F3EF0）：
+    // 原版 0x5F4434 EB 6A 在特长面板后直接跳过描述创建。
+    // 改为 EB 05 → 落入 0x5F443B 的描述指针检查，使特长/法术生物也走原版描述创建。
+    // 原版 0x5F4439 75 65：edi!=-1（可升级）时再跳过描述；NOP 让可升级也创建描述。
     _PI->WriteHexPatch(0x5F4434, "EB 05");
+    _PI->WriteHexPatch(0x5F4439, "90 90");
+    // 诊断：确认两处跳过补丁实际写入
+    WriteLog("[DescFix] patch 0x5F4434=%02X%02X 0x5F4439=%02X%02X",
+        *(unsigned char*)0x5F4434, *(unsigned char*)0x5F4435,
+        *(unsigned char*)0x5F4439, *(unsigned char*)0x5F443A);
 
     // 详细信息栏 Y 坐标 = window_height - info_bar_margin_bottom
     int info_y = wh - cfg.info_bar_margin_bottom;

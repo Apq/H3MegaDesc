@@ -42,6 +42,8 @@ static void StartPlugin()
     _PI->WriteLoHook(0x5F447F, Hook_DescTextCreateParams); // 英雄部队描述文本 create call
     _PI->WriteLoHook(0x5F3E54, Hook_DescTextCreateParams); // 战斗描述文本 create call
     _PI->WriteLoHook(0x5F489A, Hook_DescTextCreateParams); // 城镇描述文本 create call
+    // 诊断：探测英雄部队构造的描述创建路径是否被到达
+    _PI->WriteLoHook(0x5F4447, Hook_DescCreateProbe);
 
     WriteLog("MegaDesc 已启用。Hook：BUILD(战斗/冒险/城镇), DlgDefProc(0x41B120), DlgInitY(0x41AFA0+3), DescTextCreate(3)；滚轮/颜色补丁按 Features 配置。");
 }

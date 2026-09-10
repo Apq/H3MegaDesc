@@ -7,6 +7,8 @@
 //   2) 确认/解雇/魔法书按钮和描述贴到加高后布局的正确底部位置；
 //   3) 窗口 Y 由 Hook_DlgInitClampY 贴边吸附，防止绘制越屏。
 // 上述调整对战斗/冒险/城镇三种界面一视同仁。
+// 2026-09-07：解雇按钮改用原版 DEF 图标（IViewCr2.def，46×32，反编译证实 id=30723 ↔ "IViewCr2.def"，id=300 升级 ↔ "iViewCr.def"）与原版金框（48×34），仅重定位不改尺寸；
+// 确认/魔法书按钮仍使用 PCX8 合成图替换。
 
 static _Pcx8_*  s_bg_pcx8  = nullptr;
 static _Pcx8_*  s_ok_btn[4] = { nullptr, nullptr, nullptr, nullptr };
@@ -35,10 +37,11 @@ static char* FindDlgItem(_Dlg_* dlg, short target_id)
 static bool IsCreatureDescriptionItem(char* item)
 {
     if (!item) return false;
-    short id = *(short*)(item + 0x10);
     unsigned short flags = *(unsigned short*)(item + 0x14);
     void** vt = *(void***)item;
-    return id == -1 && (flags & 0x8)
+    // 不要求 id==-1：可升级路径原版把升级目标生物 id 写进控件 id，
+    // 若仍要求 -1，描述会被当成普通元素 +SHIFT，位置偏低。
+    return (flags & 0x8)
         && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
         && *(unsigned short*)(item + 0x1C) >= 120
         && *(unsigned short*)(item + 0x1C) <= 240
@@ -256,8 +259,20 @@ static int __stdcall Hook_DescTextCreateParams(LoHook* /*h*/, HookContext* c)
         sp[1] = cfg.desc_y + 6;     // y
         sp[2] = cfg.text_width;     // width
         sp[3] = cfg.text_height;    // height, true 32-bit value (e.g. 207)
+        // 可升级路径原版 push edi（升级目标生物 id）当作控件 id。
+        // 非 -1 时 IsCreatureDescriptionItem 识别失败，描述会被 +SHIFT 挤低。
+        sp[7] = -1;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
     }
+    return EXEC_DEFAULT;
+}
+
+// 诊断：0x5F4447 是描述创建路径的 operator new 调用。
+// 若此钩子触发，说明 [ebp-0x8C] 非空、代码到达了描述创建。
+static int __stdcall Hook_DescCreateProbe(LoHook* /*h*/, HookContext* c)
+{
+    int desc_ptr = *(int*)(c->ebp - 0x8C);
+    WriteLog("[DescFix] probe 0x5F4447 fired, [ebp-0x8C]=%08X", desc_ptr);
     return EXEC_DEFAULT;
 }
 
@@ -475,13 +490,12 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             *(short*)(it + 0x1A) = (short)(dlg->height - cfg.confirm_btn_margin_bottom);
             ok_def = it;
         } else if (id == 30723) {
-            // 解雇 DEF 本体：使用独立的解雇按钮位置配置。
+            // 解雇 DEF 本体：改用原版 DEF 资源（IViewCr2.def，46×32），只移动位置、不改尺寸。
+            // DEF 相对金框保持原版 (1,1) 偏移，与升级按钮的定位方式一致。
             dismiss_def_old_x = *(short*)(it + 0x18);
             dismiss_def_old_y = y;
-            *(short*)(it + 0x18) = (short)cfg.dismiss_btn_margin_left;
-            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.dismiss_btn_margin_bottom);
-            *(unsigned short*)(it + 0x1C) = 66;
-            *(unsigned short*)(it + 0x1E) = 32;
+            *(short*)(it + 0x18) = (short)(cfg.dismiss_btn_margin_left + 1);
+            *(short*)(it + 0x1A) = (short)(dlg->height - cfg.dismiss_btn_margin_bottom + 1);
             dismiss_def = it;
         } else if (id == 30724 || id == 301) {
             // 魔法书/施法 DEF 本体：id=30724 是部分场景，id=301 是战场左键己方紫龙。
@@ -500,11 +514,13 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             upgrade_def = it;
         } else if (id == -1 && ih < 100 && vt == (void**)0x63BA94) {
             // id=-1 小控件：按钮金框，先只收集，不再按出现顺序猜解雇/魔法书/升级归属。
-        } else if (id == -1 && (flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
+        } else if ((flags & 0x8) && (vt == (void**)0x642DC0 || vt == (void**)0x642DF8)
             && *(unsigned short*)(it + 0x1C) >= 120 && *(unsigned short*)(it + 0x1C) <= 240
             && *(short*)(it + 0x1A) >= 200 && *(short*)(it + 0x1A) <= 270) {
-            // 描述文字框：正常控件（h≤120）BUILD 阶段兜底调整位置和尺寸；
+            // 描述文字框：不要求 id==-1（可升级时原版把升级目标 id 写进控件 id）。
+            // 正常控件（h≤120）BUILD 阶段兜底调整位置和尺寸；
             // 扩展高度控件（如 h=207）由 Hook_DescTextCreateParams 在 Create 调用前写栈，此处不改。
+            *(short*)(it + 0x10) = -1;
             unsigned short dh = *(unsigned short*)(it + 0x1E);
             short dx = *(short*)(it + 0x18);
             short dy = *(short*)(it + 0x1A);
@@ -525,10 +541,9 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         dismiss_frame = FindNearestSmallFrame(small_frames, small_frame_x, small_frame_y, small_frame_count,
             dismiss_def_old_x, dismiss_def_old_y, nullptr, nullptr);
         if (dismiss_frame) {
+            // 原版金框（48×34）：只移动位置，保留原版 PCX8 图像与控件尺寸。
             *(short*)(dismiss_frame + 0x18) = (short)cfg.dismiss_btn_margin_left;
             *(short*)(dismiss_frame + 0x1A) = (short)(dlg->height - cfg.dismiss_btn_margin_bottom);
-            *(unsigned short*)(dismiss_frame + 0x1C) = 66;
-            *(unsigned short*)(dismiss_frame + 0x1E) = 32;
         }
     }
     if (has_spell && spell_def) {
@@ -615,12 +630,14 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             s_ok_btn[2] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok2.pcx", palSrc);
             s_ok_btn[3] = LoadPcxCompositeAsPcx8("bv_frmL.pcx", "bv_ok3.pcx", palSrc);
         }
-        if (!s_ds_btn[0]) {
-            s_ds_btn[0] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds0.pcx", palSrc);
-            s_ds_btn[1] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds1.pcx", palSrc);
-            s_ds_btn[2] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds2.pcx", palSrc);
-            s_ds_btn[3] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds3.pcx", palSrc);
-        }
+        // [2026-09-07] 解雇按钮改用原版 DEF 图标 + 原版金框，暂停加载 bv_dsX 合成图；
+        // 以下注释保留以便回退：
+        // if (!s_ds_btn[0]) {
+        //     s_ds_btn[0] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds0.pcx", palSrc);
+        //     s_ds_btn[1] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds1.pcx", palSrc);
+        //     s_ds_btn[2] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds2.pcx", palSrc);
+        //     s_ds_btn[3] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_ds3.pcx", palSrc);
+        // }
         if (!s_sp_btn[0]) {
             s_sp_btn[0] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp0.pcx", palSrc);
             s_sp_btn[1] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp1.pcx", palSrc);
@@ -628,10 +645,12 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
             s_sp_btn[3] = LoadPcxCompositeAsPcx8("bv_frmS.pcx", "bv_sp3.pcx", palSrc);
         }
     }
-    if (dismiss_frame && s_ds_btn[0]) {
-        UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn,
-            cfg.dismiss_btn_margin_left, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
-    }
+    // 原版资源模式：不替换解雇按钮的图像、不改 DEF vtable，游戏原样绘制原版图标与金框。
+    // 以下注释保留以便回退：
+    // if (dismiss_frame && s_ds_btn[0]) {
+    //     UpdatePcx8ButtonFromDef(dismiss_frame, dismiss_def, s_ds_btn,
+    //         cfg.dismiss_btn_margin_left, cfg.dismiss_btn_margin_bottom, dlg, (void**)s_ds_def_novtbl, &s_ds_binding);
+    // }
     if (spell_frame && s_sp_btn[0]) {
         UpdatePcx8ButtonFromDef(spell_frame, spell_def, s_sp_btn,
             cfg.spell_btn_margin_left, cfg.spell_btn_margin_bottom, dlg, (void**)s_sp_def_novtbl, &s_sp_binding);
@@ -643,6 +662,36 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 
     // 注意：不在 BUILD 阶段直接修改 dlg->x/y。窗口位置由 Hook_DlgInitClampY 统一处理。
     s_last_adjusted_dlg = (char*)dlg;
+
+    // 诊断：列出窗口内所有文本类控件（id=-1 且 vtable 同描述框族），确认可升级路径的描述状态
+    if (!g_disable_log) {
+        for (size_t i = 0; i < cnt; i++) {
+            char* it = data[i];
+            if (!it) continue;
+            short lid = *(short*)(it + 0x10);
+            void** lvt = *(void***)it;
+            if (lvt == (void**)0x642DC0 || lvt == (void**)0x642DF8) {
+                WriteLog("[DescFix] item[%u] id=%d vt=%p x=%d y=%d w=%u h=%u upg=%d",
+                    (unsigned)i, lid, lvt,
+                    *(short*)(it + 0x18), *(short*)(it + 0x1A),
+                    *(unsigned short*)(it + 0x1C), *(unsigned short*)(it + 0x1E),
+                    upgrade_def ? 1 : 0);
+            }
+        }
+        // 诊断：列出全部控件 id + vtable，重点看 id=300 的实际 vtable 与 id=30723
+        for (size_t i = 0; i < cnt; i++) {
+            char* it = data[i];
+            if (!it) continue;
+            short lid = *(short*)(it + 0x10);
+            if (lid == 300 || lid == 30723 || lid == 30724 || lid == 301) {
+                WriteLog("[DescFix] btn item[%u] id=%d vt=%p x=%d y=%d w=%u h=%u",
+                    (unsigned)i, lid, *(void***)it,
+                    *(short*)(it + 0x18), *(short*)(it + 0x1A),
+                    *(unsigned short*)(it + 0x1C), *(unsigned short*)(it + 0x1E));
+            }
+        }
+        WriteLog("[DescFix] total items=%u upgrade_def=%p", (unsigned)cnt, upgrade_def);
+    }
 }
 
 // BUILD-phase hooks：在窗口构建期（显示前）执行调整，hold/release 两种模式都覆盖。
@@ -670,31 +719,20 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
     return EXEC_DEFAULT;
 }
 
-// 空绘制函数：跳过原始 DEF 图标的绘制，防止与 BUILD 加载的新 PCX 叠影。
-// 同时更新 PCX8 外框的当前帧（normal/pressed/highlight/disabled），保留按下效果。
-static void __fastcall DismissDefDrawSkip(void* self, void* /*edx*/) {
-    DrawBoundButtonPcx8((char*)self);
-}
+// [2026-09-07] 解雇按钮已改用原版 DEF/金框资源，不再需要抑制原版图标绘制的空绘制函数；
+// 以下注释保留以便回退：
+// static void __fastcall DismissDefDrawSkip(void* self, void* /*edx*/) {
+//     DrawBoundButtonPcx8((char*)self);
+// }
 
 // HiHook 0x41B120（_Dlg_::DefProc）：生物信息窗口兜底。
-// 若 BUILD 已处理（s_last_adjusted_dlg 命中），跳过原始 dismiss DEF 的绘制，防止叠影。
-static void* s_dismiss_def_novtbl[15];  // 15=槽位数
+// 原版资源模式下不再替换 dismiss DEF 的 Draw：游戏自己绘制原版 IViewCr2 图标，不会与原版金框叠影。
+static void* s_dismiss_def_novtbl[15];  // 15=槽位数（原版资源模式下不再使用，保留备用）
 
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
     if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
-        if (s_last_adjusted_dlg == (char*)dlg) {
-            // BUILD 已处理：把原始 dismiss DEF 的 Draw 替换为空操作，防止叠影。
-            char* ds_def = FindDlgItem(dlg, 30723);
-            if (ds_def) {
-                void** dvt = *(void***)ds_def;
-                if (dvt && dvt != s_dismiss_def_novtbl) {
-                    for (int i = 0; i < 15; i++) s_dismiss_def_novtbl[i] = dvt[i];
-                    s_dismiss_def_novtbl[4] = (void*)&DismissDefDrawSkip;  // Draw 槽
-                    *(void***)ds_def = s_dismiss_def_novtbl;
-                }
-            }
-        } else {
+        if (s_last_adjusted_dlg != (char*)dlg) {
             AdjustCreatureInfoDlg(dlg);
             s_last_adjusted_dlg = (char*)dlg;
         }

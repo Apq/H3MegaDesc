@@ -14,8 +14,8 @@ LANGUAGE LANG_CHINESE, SUBLANG_CHINESE_SIMPLIFIED
 //
 
 IDR_VERSIONINFO VERSIONINFO
- FILEVERSION 0,7,2026,906
- PRODUCTVERSION 0,7,2026,906
+ FILEVERSION 0,8,2026,910
+ PRODUCTVERSION 0,8,2026,910
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -33,12 +33,12 @@ BEGIN
             VALUE "Comments", "¥Û√Ë ˆøÚ"
             VALUE "CompanyName", "Apq"
             VALUE "FileDescription", "¥Û√Ë ˆøÚ"
-            VALUE "FileVersion", "0.7.2026.906"
+            VALUE "FileVersion", "0.8.2026.910"
             VALUE "InternalName", "MegaDesc"
             VALUE "LegalCopyright", "Copyright (C) Apq"
             VALUE "OriginalFilename", "MegaDesc.dll"
             VALUE "ProductName", "MegaDesc"
-            VALUE "ProductVersion", "0.7.2026.906"
+            VALUE "ProductVersion", "0.8.2026.910"
         END
     END
     BLOCK "VarFileInfo"
