@@ -248,9 +248,21 @@ static void UpdatePcx8ButtonFromDef(char* frame_item, char* def_item, _Pcx8_** s
     SetDefNoDraw(def_item, novtbl);
 }
 
+// 本文件的钩子 id（静态初始化期注册；文件在 CrashGuard.hpp 之后包含）。
+static const int GUARD_DESC_PARAMS  = GuardRegisterHook_("DescTextCreateParams");
+static const int GUARD_DESC_PROBE   = GuardRegisterHook_("DescCreateProbe");
+static const int GUARD_DLG_Y_EBP10  = GuardRegisterHook_("CreatureDlgY_Ebp10");
+static const int GUARD_DLG_Y_EBP1C  = GuardRegisterHook_("CreatureDlgY_Ebp1C");
+static const int GUARD_DLG_INIT_Y   = GuardRegisterHook_("DlgInitClampY");
+static const int GUARD_BUILD_COMBAT = GuardRegisterHook_("BuildCombat");
+static const int GUARD_BUILD_ADV    = GuardRegisterHook_("BuildAdventure");
+static const int GUARD_BUILD_TOWN   = GuardRegisterHook_("BuildTown");
+static const int GUARD_DLG_DEFPROC  = GuardRegisterHook_("DlgDefProc");
+
 // 在原版 _DlgStaticText_::Create 调用前改写参数栈。
 // 原版 height 是 push imm8，TextHeight=207 会被 6A CF 符号扩展成 -49/0xFFCF。
 // 因此不能只靠原地 hex patch；在 call 0x5BC6A0 前把栈上的 x/y/w/h 改成 32-bit 正值。
+// 铠甲（CrashGuard L2）：LoHook 整函数 __try，异常=不改栈参数（原版布局），安全默认放行。
 static int __stdcall Hook_DescTextCreateParams(LoHook* /*h*/, HookContext* c)
 {
     int* sp = (int*)c->esp;
@@ -262,17 +274,21 @@ static int __stdcall Hook_DescTextCreateParams(LoHook* /*h*/, HookContext* c)
         // 可升级路径原版 push edi（升级目标生物 id）当作控件 id。
         // 非 -1 时 IsCreatureDescriptionItem 识别失败，描述会被 +SHIFT 挤低。
         sp[7] = -1;
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (GuardCrashFilter_(GUARD_DESC_PARAMS, GetExceptionInformation())) {
     }
     return EXEC_DEFAULT;
 }
 
 // 诊断：0x5F4447 是描述创建路径的 operator new 调用。
 // 若此钩子触发，说明 [ebp-0x8C] 非空、代码到达了描述创建。
+// 铠甲：探针只读不写，异常=放弃本次诊断输出。
 static int __stdcall Hook_DescCreateProbe(LoHook* /*h*/, HookContext* c)
 {
-    int desc_ptr = *(int*)(c->ebp - 0x8C);
-    WriteLog("[DescFix] probe 0x5F4447 fired, [ebp-0x8C]=%08X", desc_ptr);
+    __try {
+        int desc_ptr = *(int*)(c->ebp - 0x8C);
+        WriteLog("[DescFix] probe 0x5F4447 fired, [ebp-0x8C]=%08X", desc_ptr);
+    } __except (GuardCrashFilter_(GUARD_DESC_PROBE, GetExceptionInformation())) {
+    }
     return EXEC_DEFAULT;
 }
 
@@ -342,7 +358,7 @@ static int ClampCreatureDlgY(int old_y)
     return old_y;
 }
 
-static void PatchCreatureDlgYParam(HookContext* c, int y_offset)
+static void PatchCreatureDlgYParam(HookContext* c, int y_offset, int guard_id)
 {
     __try {
         int* py = (int*)(c->ebp + y_offset);
@@ -351,27 +367,29 @@ static void PatchCreatureDlgYParam(HookContext* c, int y_offset)
         if (new_y != old_y) {
             *py = new_y;
         }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (GuardCrashFilter_(guard_id, GetExceptionInformation())) {
     }
 }
 
 // 战斗/城镇构造函数：0041AFA0 前参数为 [ebp+0C]=x, [ebp+10]=y。
+// 铠甲：Y 吸附异常=保持原 y（安全默认），仍 EXEC_DEFAULT 放行。
 static int __stdcall Hook_CreatureDlgY_Ebp10(LoHook* /*h*/, HookContext* c)
 {
-    PatchCreatureDlgYParam(c, 0x10);
+    PatchCreatureDlgYParam(c, 0x10, GUARD_DLG_Y_EBP10);
     return EXEC_DEFAULT;
 }
 
 // 英雄部队构造函数：0041AFA0 前参数为 [ebp+18]=x, [ebp+1C]=y。
 static int __stdcall Hook_CreatureDlgY_Ebp1C(LoHook* /*h*/, HookContext* c)
 {
-    PatchCreatureDlgYParam(c, 0x1C);
+    PatchCreatureDlgYParam(c, 0x1C, GUARD_DLG_Y_EBP1C);
     return EXEC_DEFAULT;
 }
 
 // 更底层的窗口初始化统一吸附：_Dlg_ 初始化函数 0x41AFA0。
 // thiscall，调用点参数顺序为 push flags, h, w, y, x；函数入口栈为 [ret, x, y, w, h, flags]。
 // 只处理生物信息窗口尺寸，覆盖右键临时窗口/HD 包装等未命中上层构造 hook 的路径。
+// 铠甲：栈扫描失败=不吸附（原版布局），放行。
 static int __stdcall Hook_DlgInitClampY(LoHook* /*h*/, HookContext* c)
 {
     __try {
@@ -390,7 +408,7 @@ static int __stdcall Hook_DlgInitClampY(LoHook* /*h*/, HookContext* c)
                 break;
             }
         }
-    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    } __except (GuardCrashFilter_(GUARD_DLG_INIT_Y, GetExceptionInformation())) {
     }
     return EXEC_DEFAULT;
 }
@@ -697,25 +715,32 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
 // BUILD-phase hooks：在窗口构建期（显示前）执行调整，hold/release 两种模式都覆盖。
 // 历史函数名的 Combat/Adventure 与实际入口相反，保留名称及绑定避免改动执行链。
 // 0x5F4503=英雄部队(ebx)，0x5F3E75=战斗(esi)，0x5F491E=城镇(esi)；均在 LoadItem 循环前。
+// 铠甲（CrashGuard L2）：LoHook 整函数 __try，异常=跳过本次布局调整，放行原版构建。
 int __stdcall Hook_BuildCombat(LoHook* h, HookContext* c)
 {
-    _Dlg_* dlg = (_Dlg_*)c->ebx;
-    AdjustCreatureInfoDlg(dlg);
-    TryAddFightValueLine(dlg);
+    __try {
+        _Dlg_* dlg = (_Dlg_*)c->ebx;
+        AdjustCreatureInfoDlg(dlg);
+        TryAddFightValueLine(dlg);
+    } __except (GuardCrashFilter_(GUARD_BUILD_COMBAT, GetExceptionInformation())) {}
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildAdventure(LoHook* h, HookContext* c)
 {
-    _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg);
-    TryAddFightValueLine(dlg);
+    __try {
+        _Dlg_* dlg = (_Dlg_*)c->esi;
+        AdjustCreatureInfoDlg(dlg);
+        TryAddFightValueLine(dlg);
+    } __except (GuardCrashFilter_(GUARD_BUILD_ADV, GetExceptionInformation())) {}
     return EXEC_DEFAULT;
 }
 int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 {
-    _Dlg_* dlg = (_Dlg_*)c->esi;
-    AdjustCreatureInfoDlg(dlg);
-    TryAddFightValueLine(dlg);
+    __try {
+        _Dlg_* dlg = (_Dlg_*)c->esi;
+        AdjustCreatureInfoDlg(dlg);
+        TryAddFightValueLine(dlg);
+    } __except (GuardCrashFilter_(GUARD_BUILD_TOWN, GetExceptionInformation())) {}
     return EXEC_DEFAULT;
 }
 
@@ -729,13 +754,17 @@ int __stdcall Hook_BuildTown(LoHook* h, HookContext* c)
 // 原版资源模式下不再替换 dismiss DEF 的 Draw：游戏自己绘制原版 IViewCr2 图标，不会与原版金框叠影。
 static void* s_dismiss_def_novtbl[15];  // 15=槽位数（原版资源模式下不再使用，保留备用）
 
+// 铠甲：前置兜底调整段 __try；原版 DefProc 调用在 __try 之外（游戏自身
+// 崩溃不吞），异常=跳过本次调整放行。
 int __stdcall Hook_DlgDefProc(HiHook* h, _Dlg_* dlg, _EventMsg_* msg)
 {
-    if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
-        if (s_last_adjusted_dlg != (char*)dlg) {
-            AdjustCreatureInfoDlg(dlg);
-            s_last_adjusted_dlg = (char*)dlg;
+    __try {
+        if (dlg && dlg->width == 298 && dlg->height == cfg.window_height && FindDlgItem(dlg, 200)) {
+            if (s_last_adjusted_dlg != (char*)dlg) {
+                AdjustCreatureInfoDlg(dlg);
+                s_last_adjusted_dlg = (char*)dlg;
+            }
         }
-    }
+    } __except (GuardCrashFilter_(GUARD_DLG_DEFPROC, GetExceptionInformation())) {}
     return THISCALL_2(int, h->GetDefaultFunc(), dlg, msg);
 }

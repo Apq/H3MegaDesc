@@ -19,13 +19,21 @@ static bool IsRecentRightClickPopup()
            now - s_last_right_click_time < 2000;
 }
 
+// 本模块的钩子 id（文件在 CrashGuard.hpp 之后包含）。
+static const int GUARD_CREATE_ST   = GuardRegisterHook_("CreateScrollableText");
+static const int GUARD_WHEEL_MSG   = GuardRegisterHook_("WheelGetMsgProc");
+
 // Hook H3DlgScrollableText::Create (0x5BA360) 返回后，eax = 新对象指针
+// 铠甲（CrashGuard L2）：LoHook 整函数 __try，异常=不缓存指针（滚轮失效但
+// 不崩），放行。
 static int __stdcall Hook_CreateScrollableText(LoHook* /*h*/, HookContext* c)
 {
-    if (IsRecentRightClickPopup())
-        s_last_scrollable_text = (char*)c->eax;
-    else
-        s_last_scrollable_text = nullptr;
+    __try {
+        if (IsRecentRightClickPopup())
+            s_last_scrollable_text = (char*)c->eax;
+        else
+            s_last_scrollable_text = nullptr;
+    } __except (GuardCrashFilter_(GUARD_CREATE_ST, GetExceptionInformation())) {}
     return EXEC_DEFAULT;
 }
 
@@ -71,19 +79,23 @@ static void ProcessWheelForScrollableText(char* st, int wheel_delta)
     }
 }
 
+// 铠甲：消息识别段 __try，异常=本次不处理滚轮；CallNextHookEx 透传在
+// __try 之外（钩子链不能断）。
 static LRESULT CALLBACK WheelGetMsgProc(int code, WPARAM wParam, LPARAM lParam)
 {
-    if (code == HC_ACTION && wParam == PM_REMOVE) {
-        MSG* m = (MSG*)lParam;
-        if (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP) {
-            s_last_right_click_time = GetTickCount();
-        } else if (m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONUP) {
-            s_last_left_click_time = GetTickCount();
-            s_last_scrollable_text = nullptr;
-        } else if (m->message == WM_MOUSEWHEEL) {
-            short delta = (short)HIWORD(m->wParam);
-            ProcessWheelForScrollableText(s_last_scrollable_text, delta);
+    __try {
+        if (code == HC_ACTION && wParam == PM_REMOVE) {
+            MSG* m = (MSG*)lParam;
+            if (m->message == WM_RBUTTONDOWN || m->message == WM_RBUTTONUP) {
+                s_last_right_click_time = GetTickCount();
+            } else if (m->message == WM_LBUTTONDOWN || m->message == WM_LBUTTONUP) {
+                s_last_left_click_time = GetTickCount();
+                s_last_scrollable_text = nullptr;
+            } else if (m->message == WM_MOUSEWHEEL) {
+                short delta = (short)HIWORD(m->wParam);
+                ProcessWheelForScrollableText(s_last_scrollable_text, delta);
+            }
         }
-    }
+    } __except (GuardCrashFilter_(GUARD_WHEEL_MSG, GetExceptionInformation())) {}
     return CallNextHookEx(nullptr, code, wParam, lParam);
 }

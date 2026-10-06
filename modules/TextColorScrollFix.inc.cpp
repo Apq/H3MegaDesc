@@ -72,10 +72,17 @@ static void PropagateSplitLineTextColors(H3Vector<H3String>& lines)
     }
 }
 
+// 本模块的钩子 id（文件在 CrashGuard.hpp 之后包含）。
+static const int GUARD_SPLIT_TEXT_COLOR = GuardRegisterHook_("SplitTextIntoLinesTextColor");
+
+// 铠甲（CrashGuard L2）：原版拆行必须先执行（在 __try 之外）；后置颜色
+// 传播段 __try，异常=本段颜色丢失，不影响文本内容。
 void __stdcall Hook_SplitTextIntoLinesTextColor(HiHook* h, H3Font* font, LPCSTR text, int width, H3Vector<H3String>& lines)
 {
     THISCALL_4(void, h->GetDefaultFunc(), font, text, width, &lines);
-    PropagateSplitLineTextColors(lines);
+    __try {
+        PropagateSplitLineTextColors(lines);
+    } __except (GuardCrashFilter_(GUARD_SPLIT_TEXT_COLOR, GetExceptionInformation())) {}
 }
 
 static void ApplyTextColorScrollableTextFix()

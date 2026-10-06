@@ -36,6 +36,8 @@ PatcherInstance* _PI = nullptr;
 
 // 模块按顺序包含到同一个翻译单元，保证 patcher 全局对象和静态辅助函数共享同一份状态。
 #include "modules/ConfigLog.inc.cpp"
+// 崩溃防御（CrashGuard，见 modules/CrashGuard.hpp 头注释 / 技能 h3-plugin-crash-guard）。
+#include "modules/CrashGuard.hpp"
 #include "modules/CreatureDialog.inc.cpp"
 #include "modules/fightvalue.inc.cpp"
 #include "modules/ScrollableTextWheel.inc.cpp"
