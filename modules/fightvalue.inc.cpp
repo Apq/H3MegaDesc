@@ -52,10 +52,37 @@ static void AddFightValueLine(_Dlg_* dlg, int fight_value, int current_value)
     if (!dlg || fight_value <= 0 || FindDlgItem(dlg, 3008) || FindDlgItem(dlg, 3009)) return;
 
     char* name_item = FindDlgItem(dlg, 203);
-    short y = (short)((name_item ? *(short*)(name_item + 0x1A) : 41) + cfg.fight_value_y_offset);
+    int y = (name_item ? *(short*)(name_item + 0x1A) : 41) + cfg.fight_value_y_offset;
+    const int name_top = name_item ? *(short*)(name_item + 0x1A) : 0;
+    const int name_h = name_item ? *(unsigned short*)(name_item + 0x1E) : 0;
+    const int font_h = SmallFontTextHeight_(0);
+    const int name_bottom = name_top + (name_h > font_h ? name_h : font_h);
+    const int text_height = SmallFontTextHeight_(17);
+    if (text_height > 17) {
+        const unsigned* vec = (const unsigned*)((const char*)dlg + 0x30);
+        char* const* items = (char* const*)vec[1];
+        const size_t count = vec[2] >= vec[1] ? (vec[2] - vec[1]) / 4 : 0;
+        if (y < name_bottom) y = name_bottom;
+        int next_top = dlg->height;
+        for (size_t i = 0; i < count; ++i) {
+            const char* item = items[i];
+            if (!item || !(*(const unsigned short*)(item + 0x14) & 0x8)) continue;
+            const int left = *(const short*)(item + 0x18);
+            const int top = *(const short*)(item + 0x1A);
+            const int width = *(const unsigned short*)(item + 0x1C);
+            if (left < 276 && left + width > 25 && top > y && top < next_top)
+                next_top = top;
+        }
+        if (y + text_height > next_top)
+            y = next_top - text_height;
+        if (y < 0 || y < name_bottom || y + text_height > dlg->height) {
+            WriteLog("[FightValue] small font height=%d exceeds available name/attribute gap; line omitted", text_height);
+            return;
+        }
+    }
 
     H3DlgText* label = H3DlgText::Create(
-        25, y, 130, 17, cfg.label_fight_value, (char*)"smalfont.fnt",
+        25, y, 130, text_height, cfg.label_fight_value, (char*)"smalfont.fnt",
         4, 3009, eTextAlignment::TOP_LEFT, 0);
     if (label)
         // BUILD Hook 内只登记新控件，避免默认 initiate=TRUE 重入游戏的 LoadItem。
@@ -69,7 +96,7 @@ static void AddFightValueLine(_Dlg_* dlg, int fight_value, int current_value)
     value_text[sizeof(value_text) - 1] = 0;
 
     H3DlgText* value = H3DlgText::Create(
-        148, y, 128, 17, value_text, (char*)"smalfont.fnt",
+        148, y, 128, text_height, value_text, (char*)"smalfont.fnt",
         4, 3008, eTextAlignment::TOP_RIGHT, 0);
     if (value)
         reinterpret_cast<H3BaseDlg*>(dlg)->AddItem(reinterpret_cast<H3DlgItem*>(value), FALSE);

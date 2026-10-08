@@ -6,7 +6,7 @@ if not defined PAUSE_ON_SUCCESS set PAUSE_ON_SUCCESS=0
 rem 清代理变量：HTTP_PROXY 与 http_proxy 同时存在时，MSBuild 的 .NET 环境字典
 rem 键冲突（大小写不敏感）会报 MSB6001，编译直接失败。
 set HTTP_PROXY=& set http_proxy=& set HTTPS_PROXY=& set https_proxy=& set ALL_PROXY=& set all_proxy=& set NO_PROXY=& set no_proxy=
-call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe" MegaDesc.vcxproj /p:Configuration=Release /p:Platform=Win32 /m
+call "C:\Program Files\Microsoft Visual Studio\18\Enterprise\MSBuild\Current\Bin\MSBuild.exe" MegaDesc.vcxproj /p:Configuration=Release /p:Platform=Win32 /m /t:Rebuild
 if errorlevel 1 (
     pwsh -c "Write-Host '编译失败' -ForegroundColor Red"
     pause

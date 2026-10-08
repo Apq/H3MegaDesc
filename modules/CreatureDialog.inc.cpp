@@ -20,6 +20,14 @@ static void ReplacePcx8ItemImage(char* item, _Pcx8_* pcx);
 static int ButtonStateFromDef(char* def_item);
 static void TryAddFightValueLine(_Dlg_* dlg);
 
+static int SmallFontTextHeight_(int requested)
+{
+    // Borrow the game's loaded font; no resource reference is acquired here.
+    const H3SmallFont* font = H3SmallFont::Get();
+    const int line_height = font && font->height > 0 ? font->height : 17;
+    return requested > line_height ? requested : line_height;
+}
+
 // 返回 dlg 内指定 id 的控件；用于判断窗口类型。
 static char* FindDlgItem(_Dlg_* dlg, short target_id)
 {
@@ -267,10 +275,11 @@ static int __stdcall Hook_DescTextCreateParams(LoHook* /*h*/, HookContext* c)
 {
     int* sp = (int*)c->esp;
     __try {
+        const int text_height = SmallFontTextHeight_(cfg.text_height);
         sp[0] = 20 + cfg.desc_x_offset;   // x
         sp[1] = cfg.desc_y + 6;     // y
-        sp[2] = cfg.text_width;     // width
-        sp[3] = cfg.text_height;    // height, true 32-bit value (e.g. 207)
+        sp[2] = cfg.text_width > 0 ? cfg.text_width : 1;
+        sp[3] = text_height;       // positive 32-bit height, at least one font line
         // 可升级路径原版 push edi（升级目标生物 id）当作控件 id。
         // 非 -1 时 IsCreatureDescriptionItem 识别失败，描述会被 +SHIFT 挤低。
         sp[7] = -1;
@@ -350,7 +359,7 @@ static int ClampCreatureDlgY(int old_y)
     // 1) 整个加高后的窗口不能超出屏幕；
     // 2) 描述区域绝对底边不能超出绘制 buffer。
     int max_by_window = sy - cfg.window_height;
-    int max_by_desc = sy - (cfg.desc_y + 6) - cfg.text_height;
+    int max_by_desc = sy - (cfg.desc_y + 6) - SmallFontTextHeight_(cfg.text_height);
     int max_y = (max_by_window < max_by_desc) ? max_by_window : max_by_desc;
     if (max_y < 0) max_y = 0;
     if (old_y > max_y) return max_y;
@@ -426,6 +435,17 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
     char** data = (char**)vec[1];                                   // Data@+4
     size_t cnt = (vec[2] >= vec[1]) ? ((size_t)(vec[2] - vec[1]) / 4) : 0;
 
+    int content_shift = cfg.shift;
+    const int font_h = SmallFontTextHeight_(0);
+    char* name_item = FindDlgItem(dlg, 203);
+    char* attribute_item = FindDlgItem(dlg, 205);
+    if (font_h > 17 && font_h <= 24 && name_item && attribute_item) {
+        const int name_y = *(short*)(name_item + 0x1A);
+        const int attribute_y = *(short*)(attribute_item + 0x1A);
+        const int required = name_y + 2 * font_h - attribute_y;
+        if (required > content_shift) content_shift = required;
+    }
+
     // 解雇按钮仅在"双击管理窗口"出现；魔法书按钮仅在法术生物出现。
     bool has_dismiss = (FindDlgItem(dlg, 30723) != nullptr);
     bool has_spell   = (FindDlgItem(dlg, 30724) != nullptr) || (FindDlgItem(dlg, 301) != nullptr);
@@ -495,7 +515,7 @@ static void AdjustCreatureInfoDlg(_Dlg_* dlg)
         bool is_minus1_text = IsCreatureDescriptionItem(it);
 
     // 元素下移（只执行一次）：除背景200/名称203/状态栏224/描述文本外整体 +SHIFT
-        if (need_shift && id != 200 && id != 203 && id != 224 && !is_minus1_text) *(short*)(it + 0x1A) = (short)(y + cfg.shift);
+        if (need_shift && id != 200 && id != 203 && id != 224 && !is_minus1_text) *(short*)(it + 0x1A) = (short)(y + content_shift);
 
         // 三类按钮都按金框左上角绝对坐标定位；DEF 命中区同步跟随。
         if (id == 225) {
