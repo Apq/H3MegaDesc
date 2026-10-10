@@ -70,5 +70,6 @@ Testing/
 .vs
 *.aps
 
-Release/
+Release/*
+!Release/*.zip
 *.user
